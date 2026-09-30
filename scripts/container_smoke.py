@@ -23,6 +23,36 @@ def run(args, **kwargs):
     return result.stdout
 
 
+def restore_fixture_ownership(deployment: Path, image: str, platform: str):
+    # Linux bind mounts retain UID 10001 ownership after the non-root service exits.
+    # Restore only the disposable fixture mounts before TemporaryDirectory cleanup.
+    run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "--user",
+            "0:0",
+            "--platform",
+            platform,
+            "--mount",
+            f"type=bind,source={deployment / 'repo'},target=/repo",
+            "--mount",
+            f"type=bind,source={deployment / 'data'},target=/data",
+            "--entrypoint",
+            "chown",
+            image,
+            "-hR",
+            f"{os.getuid()}:{os.getgid()}",
+            "/repo",
+            "/data",
+        ]
+    )
+
+
 PROBE = """
 import asyncio, json, urllib.request
 from fastmcp import Client
@@ -181,7 +211,11 @@ else:
                         )
                     assert any(record["authorized"] for record in records)
                 finally:
-                    command("down", "--remove-orphans")
+                    try:
+                        command("down", "--remove-orphans")
+                    finally:
+                        if sys.platform.startswith("linux"):
+                            restore_fixture_ownership(deployment, args.image, args.platform)
 
 
 if __name__ == "__main__":

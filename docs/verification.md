@@ -44,7 +44,12 @@ forge write operation or public image publication was used.
   are isolated. OAuth host publishing is loopback-only; tunnel example has no ports.
 - GitHub Actions builds/tests both architectures and publishes the exact tested
   images to `ghcr.io/fabiancz/markdown-mcp`. Workflow syntax is checked locally;
-  execution on GitHub and registry publication remain unperformed.
+  the first GitHub run passed Python checks and the amd64 Compose assertions,
+  but failed to clean up Linux fixture files owned by UID 10001. The smoke script
+  now restores ownership of only the disposable mounts after stopping Compose.
+  The permission failure and ownership repair were reproduced in Linux containers
+  for both architectures; the actual cleanup helper and Compose smoke also pass locally.
+  Successful registry publication remains to be verified.
 - `actionlint` **1.7.12** passes. Workflow metadata was exercised for PR/main,
   matching version tags/manual input and mismatched versions. Publication ordering
   and stable-only `latest` were exercised with a simulated Docker command.
