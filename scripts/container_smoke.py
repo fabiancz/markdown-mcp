@@ -1,4 +1,4 @@
-"""Build-independent Compose smoke test against a disposable HTTPS Git remote."""
+"""Build-independent Compose smoke test against a disposable HTTP(S) Git remote."""
 
 import argparse
 import json
@@ -74,6 +74,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", default="ghcr.io/fabiancz/markdown-mcp:latest")
     parser.add_argument("--platform", default="linux/arm64")
+    parser.add_argument("--git-http", action="store_true", help="Test opt-in HTTP Git transport")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="obsidian-container-") as directory:
         root = Path(directory).resolve()
@@ -88,7 +89,8 @@ def main():
         (origin / "Backup.md").write_text("# Backups\nzáloha\n")
         run(["git", "-C", str(origin), "add", "Backup.md"])
         run(["git", "-C", str(origin), "commit", "-m", "test: container fixture"])
-        with https_git(root) as (port, cert, records):
+        with https_git(root, tls=not args.git_http) as (port, cert, records):
+            scheme = "http" if args.git_http else "https"
             for profile in ("tunnel", "oauth"):
                 deployment = root / profile
                 deployment.mkdir()
@@ -99,7 +101,8 @@ def main():
                 values = {
                     "IMAGE": args.image,
                     "GIT_PROVIDER": "forgejo",
-                    "GIT_REPO_URL": f"https://host.docker.internal:{port}/owner/vault.git",
+                    "GIT_REPO_URL": f"{scheme}://host.docker.internal:{port}/owner/vault.git",
+                    "GIT_ALLOW_HTTP": str(args.git_http).lower(),
                     "GIT_USERNAME": "fixture",
                     "GIT_PAT": "test-only",
                     "TUNNEL_IMAGE": (
@@ -120,12 +123,15 @@ def main():
                     "services": {
                         "mcp": {
                             "platform": args.platform,
-                            "environment": {"GIT_CA_BUNDLE": "/fixture-ca.pem"},
                             "healthcheck": {"interval": "1s", "start_period": "2s"},
-                            "volumes": [f"{cert}:/fixture-ca.pem:ro"],
                         }
                     }
                 }
+                if cert:
+                    override["services"]["mcp"].update(
+                        environment={"GIT_CA_BUNDLE": "/fixture-ca.pem"},
+                        volumes=[f"{cert}:/fixture-ca.pem:ro"],
+                    )
                 if sys.platform.startswith("linux"):
                     override["services"]["mcp"]["extra_hosts"] = [
                         "host.docker.internal:host-gateway"

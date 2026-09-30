@@ -11,7 +11,11 @@ def main():
     fields = dict(line.rstrip("\n").split("=", 1) for line in sys.stdin if "=" in line)
     url = urlsplit(os.environ["VAULT_GIT_URL"])
     if (
-        fields.get("protocol") == "https"
+        fields.get("protocol") == url.scheme
+        and (
+            url.scheme == "https"
+            or (url.scheme == "http" and os.environ.get("VAULT_GIT_ALLOW_HTTP") == "true")
+        )
         and fields.get("host") == url.netloc
         and fields.get("path", "").lstrip("/") == url.path.lstrip("/")
     ):

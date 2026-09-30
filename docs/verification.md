@@ -84,6 +84,21 @@ TLS Git: initial clone/fetch/index/read is approximately 0.46 s / 2.80 s for 1k/
 unchanged fetch/read p95 approximately 181 / 217 ms. WAN latency is absent.
 These are synthetic developer-machine measurements, not a production-vault benchmark.
 
+## Opt-in HTTP Git transport (2026-09-30)
+
+`GIT_ALLOW_HTTP=true` permits credential-free HTTP repository/API URLs; HTTPS
+remains the default. The credential helper matches the configured scheme, host,
+port and repository path. Redirects remain disabled and OAuth origins require HTTPS.
+
+Verification: locked dependency sync, Ruff lint/format and wheel/sdist build passed;
+25 pytest cases passed, including real authenticated HTTP and HTTPS clone/fetch,
+credential scoping, wrong-token failures and redirect rejection. Local Docker
+builds and Compose smoke tests passed on Linux arm64 and emulated amd64 for both
+transports and both profiles. Tunnel-profile MCP search/read and recreation
+preserved the snapshot; OAuth discovery and unauthenticated 401 checks passed.
+These tests used synthetic Git repositories and credentials. The HTTP change has
+not been published to GHCR or tested against an operator's private deployment.
+
 ## Required external acceptance
 
 Still unperformed: real ChatGPT HTTPS OAuth connect/search/read/reconnect, tunnel-only

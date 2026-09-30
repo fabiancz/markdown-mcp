@@ -60,6 +60,7 @@ class ManagedGit:
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "VAULT_GIT_URL": self.settings.git_repo_url,
+                "VAULT_GIT_ALLOW_HTTP": str(self.settings.git_allow_http).lower(),
                 "VAULT_GIT_USERNAME": self.settings.git_username,
                 "VAULT_GIT_PAT": self.settings.git_pat.get_secret_value(),
             }

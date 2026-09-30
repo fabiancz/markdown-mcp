@@ -1,4 +1,4 @@
-"""Disposable HTTPS smart-Git fixture with synthetic Basic credentials."""
+"""Disposable HTTP(S) smart-Git fixture with synthetic Basic credentials."""
 
 import base64
 import os
@@ -12,30 +12,31 @@ from urllib.parse import urlsplit
 
 
 @contextmanager
-def https_git(root: Path):
-    cert, key = root / "cert.pem", root / "key.pem"
-    subprocess.run(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-days",
-            "1",
-            "-keyout",
-            str(key),
-            "-out",
-            str(cert),
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1",
-        ],
-        check=True,
-        capture_output=True,
-    )
+def https_git(root: Path, *, tls: bool = True):
+    cert, key = (root / "cert.pem" if tls else None), root / "key.pem"
+    if tls:
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "1",
+                "-keyout",
+                str(key),
+                "-out",
+                str(cert),
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1",
+            ],
+            check=True,
+            capture_output=True,
+        )
     backend = (
         subprocess.check_output(["git", "--exec-path"], text=True).strip() + "/git-http-backend"
     )
@@ -60,7 +61,8 @@ def https_git(root: Path):
                 self.send_response(302)
                 self.send_header(
                     "Location",
-                    f"https://localhost:{self.server.server_port}/other/vault.git/info/refs",
+                    f"{'https' if tls else 'http'}://localhost:"
+                    f"{self.server.server_port}/other/vault.git/info/refs",
                 )
                 self.end_headers()
                 return
@@ -99,9 +101,10 @@ def https_git(root: Path):
             self.wfile.write(content)
 
     server = ThreadingHTTPServer(("0.0.0.0", 0), Handler)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(cert, key)
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    if tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

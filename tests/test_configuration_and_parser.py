@@ -46,6 +46,70 @@ def test_provider_identity_and_api_defaults(vault, provider, url, id, api):
     assert explicit.repository_id == "owner/vault" and explicit.api_url.endswith("subpath/api/v1")
 
 
+def test_http_git_requires_opt_in_and_keeps_url_restrictions(vault):
+    values = dict(vault[0].model_dump(), git_repo_url="http://127.0.0.1:3006/owner/vault.git")
+    with pytest.raises(ValidationError, match="GIT_ALLOW_HTTP"):
+        Settings(**values)
+    settings = Settings(**dict(values, git_allow_http=True))
+    assert settings.api_url == "http://127.0.0.1:3006/api/v1"
+    assert (
+        Settings(
+            **dict(settings.model_dump(), forge_api_url="http://127.0.0.1:3006/api/v1")
+        ).api_url
+        == settings.api_url
+    )
+    with pytest.raises(ValidationError, match="GIT_ALLOW_HTTP"):
+        Settings(**dict(vault[0].model_dump(), forge_api_url="http://127.0.0.1:3006/api/v1"))
+    for url in [
+        "ssh://git@127.0.0.1:226/owner/vault.git",
+        "http://user:token@127.0.0.1:3006/owner/vault.git",
+        "http://127.0.0.1:3006/owner/vault.git?token=secret",
+        "http://127.0.0.1:3006/owner/vault.git#fragment",
+    ]:
+        with pytest.raises(ValidationError):
+            Settings(**dict(settings.model_dump(), git_repo_url=url))
+    # Git's opt-in must never permit a plain HTTP OAuth origin.
+    with pytest.raises(ValidationError, match="OAuth requires an HTTPS"):
+        Settings(
+            **dict(
+                settings.model_dump(),
+                deployment_mode="oauth",
+                public_base_url="http://mcp.example.com",
+            )
+        )
+
+
+def test_http_credential_helper_scopes_protocol_host_port_and_path():
+    env = dict(
+        os.environ,
+        VAULT_GIT_URL="http://127.0.0.1:3006/owner/vault.git",
+        VAULT_GIT_ALLOW_HTTP="true",
+        VAULT_GIT_USERNAME="fixture",
+        VAULT_GIT_PAT="synthetic-http-token",
+    )
+    request = {"protocol": "http", "host": "127.0.0.1:3006", "path": "owner/vault.git"}
+
+    def invoke(fields, environment=env):
+        return subprocess.run(
+            [sys.executable, str(ROOT / "src/obsidian_mcp/credential_helper.py"), "get"],
+            env=environment,
+            input="".join(f"{k}={v}\n" for k, v in fields.items()) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    assert "password=synthetic-http-token" in invoke(request)
+    for update in [
+        {"protocol": "https"},
+        {"host": "other.example:3006"},
+        {"host": "127.0.0.1:3007"},
+        {"path": "owner/other.git"},
+    ]:
+        assert invoke(dict(request, **update)) == ""
+    assert invoke(request, dict(env, VAULT_GIT_ALLOW_HTTP="false")) == ""
+
+
 def test_compose_examples_match_settings_and_isolate_secrets():
     for profile in ["oauth", "tunnel"]:
         compose = yaml.safe_load((ROOT / f"examples/{profile}/docker-compose.yaml").read_text())

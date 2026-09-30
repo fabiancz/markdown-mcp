@@ -47,6 +47,12 @@ The upstream Docker deployment reference is
 
 The app uses a credential-free HTTPS clone URL plus username/PAT through a scoped
 Git credential helper. TLS verification remains on; redirects are rejected.
+For a Git server on a trusted private network without HTTPS, set
+`GIT_ALLOW_HTTP=true` and use a plain `http://HOST:PORT/owner/vault.git` URL.
+HTTP sends the PAT and note content unencrypted. The container must be able to
+reach that host and port; a LAN IP can be used directly. `localhost` inside the
+container refers to the container itself. Both Compose examples pass this setting
+to MCP only; OAuth's public origin still requires HTTPS. SSH is unsupported.
 Use a service account with read access to the selected repository. M1 performs
 clone/fetch only and requires no branch push/CR/merge rights. GitHub/GitLab/Forgejo
 HTTPS URLs are configurable; vendor PAT/scope enforcement must be verified on your

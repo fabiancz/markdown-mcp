@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     public_base_url: str = ""
     git_provider: Literal["github", "gitlab", "forgejo"]
     git_repo_url: str
+    git_allow_http: bool = False
     git_target_branch: str = ""
     git_username: str
     git_pat: SecretStr = SecretStr("")
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
                 setattr(self, name, SecretStr(file.read_text().strip()))
         url = urlsplit(self.git_repo_url)
         if (
-            url.scheme != "https"
+            url.scheme not in ({"https", "http"} if self.git_allow_http else {"https"})
             or not url.hostname
             or url.username
             or url.password
@@ -68,7 +69,10 @@ class Settings(BaseSettings):
             or url.fragment
             or not url.path.strip("/")
         ):
-            raise ValueError("GIT_REPO_URL must be a credential-free HTTPS repository URL")
+            raise ValueError(
+                "GIT_REPO_URL must be a credential-free HTTPS repository URL "
+                "(HTTP requires GIT_ALLOW_HTTP=true)"
+            )
         if any(c in self.git_repo_url + self.git_username for c in "\n\r\0"):
             raise ValueError("Invalid Git configuration")
         if not self.git_username or not self.git_pat.get_secret_value():
@@ -122,13 +126,16 @@ class Settings(BaseSettings):
         if self.forge_api_url:
             api = urlsplit(self.forge_api_url)
             if (
-                api.scheme != "https"
+                api.scheme not in ({"https", "http"} if self.git_allow_http else {"https"})
                 or not api.hostname
                 or api.username
                 or api.query
                 or api.fragment
             ):
-                raise ValueError("FORGE_API_URL must be a credential-free HTTPS URL")
+                raise ValueError(
+                    "FORGE_API_URL must be a credential-free HTTPS URL "
+                    "(HTTP requires GIT_ALLOW_HTTP=true)"
+                )
         return self
 
     @property
@@ -157,9 +164,11 @@ class Settings(BaseSettings):
             return (
                 "https://api.github.com"
                 if url.hostname == "github.com"
-                else f"https://{url.netloc}/api/v3"
+                else f"{url.scheme}://{url.netloc}/api/v3"
             )
-        return f"https://{url.netloc}" + ("/api/v4" if self.git_provider == "gitlab" else "/api/v1")
+        return f"{url.scheme}://{url.netloc}" + (
+            "/api/v4" if self.git_provider == "gitlab" else "/api/v1"
+        )
 
     @property
     def source_identity(self) -> str:

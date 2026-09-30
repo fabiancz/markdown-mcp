@@ -17,6 +17,8 @@ Use Python 3.12 and uv with the committed lockfile. Run:
 - `actionlint .github/workflows/build.yml` for workflow changes
 - `uv run python scripts/container_smoke.py --platform linux/ARCH --image IMAGE`
   for each architecture when changing container/release behavior
+- Repeat the container smoke command with `--git-http` when changing Git transport
+  or credential handling, to verify the opt-in HTTP path as well as HTTPS
 
 GitHub Actions runs checks on hosted Ubuntu and publishes tested amd64/arm64
 images to GHCR. Pull requests must never publish or receive package write access.

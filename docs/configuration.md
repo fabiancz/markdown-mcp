@@ -14,13 +14,14 @@ Application configuration reads the process environment, not an automatic local
 | `REPO_ROOT`, `DATA_ROOT` | Native app directory overrides, `/repo` and `/data`; Compose keeps these fixed |
 | `HOST`, `PORT` | Native app listener, `0.0.0.0:8000` |
 | `GIT_PROVIDER` | Required `github`, `gitlab` or `forgejo` |
-| `GIT_REPO_URL` | Required credential-free HTTPS repository URL; no URL username/PAT/query/fragment |
+| `GIT_REPO_URL` | Required credential-free HTTPS repository URL; HTTP requires `GIT_ALLOW_HTTP=true`; no URL username/PAT/query/fragment |
+| `GIT_ALLOW_HTTP` | false; explicitly allow plain HTTP Git and forge API URLs on a trusted network; credentials and note content travel unencrypted |
 | `GIT_TARGET_BRANCH` | Empty discovers/persists the remote default branch; explicit branch takes precedence |
 | `GIT_USERNAME`, `GIT_PAT` | Required service-account HTTPS credentials; M1 requires repository read access only |
 | `GIT_PAT_FILE` | Optional mounted secret file; conflicts with a nonempty `GIT_PAT` |
 | `GIT_CA_BUNDLE` | Optional mounted CA certificate bundle; TLS verification cannot be disabled |
 | `FORGE_REPO_ID` | Optional owner/repo or GitLab namespace/subgroup/project override |
-| `FORGE_API_URL` | Optional HTTPS API root, required for ambiguous subpath hosting |
+| `FORGE_API_URL` | Optional HTTPS API root (HTTP requires `GIT_ALLOW_HTTP=true`), required for ambiguous subpath hosting |
 | `GIT_COMMIT_NAME`, `GIT_COMMIT_EMAIL` | Reserved future write metadata, defaults Vault MCP Bot / vault-mcp@example.invalid |
 | `GIT_TIMEOUT_SECONDS` | 15 seconds per Git command |
 | `SYNC_BEFORE_READ` | true; explicit snapshot/cursor skips synchronization |

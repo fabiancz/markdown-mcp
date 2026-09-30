@@ -32,6 +32,8 @@ docker build -t ghcr.io/fabiancz/markdown-mcp:latest .
 Choose a profile and copy its `docker-compose.yaml` and `.env.example` into a new
 installation directory. Rename `.env.example` to `.env`, fill in your HTTPS Git
 URL, username and read-capable PAT, then fill in OAuth or tunnel configuration.
+For a trusted private Git server using plain HTTP, explicitly set
+`GIT_ALLOW_HTTP=true`; credentials and note content then travel unencrypted.
 Prepare empty `repo/` and `data/` directories owned by UID/GID 10001:
 
 ```sh

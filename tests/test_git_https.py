@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from conftest import git
 
+from obsidian_mcp.config import Settings
 from obsidian_mcp.git_source import ManagedGit
 from obsidian_mcp.models import DomainError
 from obsidian_mcp.read import Reader
@@ -13,16 +14,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from git_fixture import https_git
 
 
-async def test_authenticated_https_clone_fetch_and_secret_scope(vault):
+@pytest.mark.parametrize("tls", [True, False], ids=["https", "http-opt-in"])
+async def test_authenticated_https_clone_fetch_and_secret_scope(vault, tls):
     settings, _, origin, _ = vault
     remote = origin.parent / "owner" / "vault.git"
     remote.parent.mkdir()
     subprocess.run(
         ["git", "clone", "--bare", str(origin), str(remote)], check=True, capture_output=True
     )
-    with https_git(origin.parent) as (port, cert, records):
-        settings.git_repo_url = f"https://localhost:{port}/owner/vault.git"
-        settings.git_ca_bundle = cert
+    with https_git(origin.parent, tls=tls) as (port, cert, records):
+        scheme = "https" if tls else "http"
+        settings = Settings(
+            **dict(
+                settings.model_dump(),
+                git_repo_url=f"{scheme}://localhost:{port}/owner/vault.git",
+                git_ca_bundle=cert,
+                git_allow_http=not tls,
+            )
+        )
         source = ManagedGit(settings)
         reader = Reader(settings, source)
         result = await reader.search_notes("zaloha")
@@ -35,7 +44,7 @@ async def test_authenticated_https_clone_fetch_and_secret_scope(vault):
         # A configured redirect never reaches the destination and never sends credentials there.
         redirected = settings.model_copy(
             update={
-                "git_repo_url": f"https://localhost:{port}/redirect/vault.git",
+                "git_repo_url": f"{scheme}://localhost:{port}/redirect/vault.git",
                 "repo_root": origin.parent / "redirect-repo",
                 "data_root": origin.parent / "redirect-data",
             }
