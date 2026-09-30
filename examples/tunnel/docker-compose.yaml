@@ -1,0 +1,61 @@
+services:
+  mcp:
+    image: ${IMAGE:?Set a released image tag or local test image}
+    user: 10001:10001
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    environment:
+      DEPLOYMENT_MODE: tunnel
+      GIT_PROVIDER: ${GIT_PROVIDER:?Set GIT_PROVIDER}
+      GIT_REPO_URL: ${GIT_REPO_URL:?Set GIT_REPO_URL}
+      GIT_TARGET_BRANCH: ${GIT_TARGET_BRANCH:-}
+      GIT_USERNAME: ${GIT_USERNAME:?Set GIT_USERNAME}
+      GIT_PAT: ${GIT_PAT:?Set GIT_PAT}
+      FORGE_API_URL: ${FORGE_API_URL:-}
+      FORGE_REPO_ID: ${FORGE_REPO_ID:-}
+      GIT_COMMIT_NAME: ${GIT_COMMIT_NAME:-Vault MCP Bot}
+      GIT_COMMIT_EMAIL: ${GIT_COMMIT_EMAIL:-vault-mcp@example.invalid}
+      SYNC_BEFORE_READ: ${SYNC_BEFORE_READ:-true}
+      SYNC_MIN_INTERVAL_SECONDS: ${SYNC_MIN_INTERVAL_SECONDS:-0}
+      SYNC_FAILURE_POLICY: ${SYNC_FAILURE_POLICY:-serve_stale}
+      GIT_TIMEOUT_SECONDS: ${GIT_TIMEOUT_SECONDS:-15}
+      ALLOWED_FOLDERS: ${ALLOWED_FOLDERS:-}
+      EXCLUDED_FOLDERS: ${EXCLUDED_FOLDERS:-.git,.obsidian,.trash,repo,data}
+      MAX_FILE_BYTES: ${MAX_FILE_BYTES:-1048576}
+      MAX_RESPONSE_BYTES: ${MAX_RESPONSE_BYTES:-32768}
+      MAX_INDEX_BYTES: ${MAX_INDEX_BYTES:-268435456}
+      SNAPSHOT_RETENTION_SECONDS: ${SNAPSHOT_RETENTION_SECONDS:-900}
+      SNAPSHOT_MAX_BYTES: ${SNAPSHOT_MAX_BYTES:-1073741824}
+      WRITE_ENABLED: ${WRITE_ENABLED:-false}
+      WRITE_DEFAULT_MODE: ${WRITE_DEFAULT_MODE:-review}
+      YOLO_ENABLED: ${YOLO_ENABLED:-false}
+    volumes:
+    - ${REPO_DIR:-./repo}:/repo
+    - ${DATA_DIR:-./data}:/data
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=2)
+      interval: 30s
+      timeout: 3s
+      start_period: 60s
+      retries: 3
+  tunnel:
+    image: ${TUNNEL_IMAGE:?Set the pinned official tunnel image}
+    restart: unless-stopped
+    environment:
+      CONTROL_PLANE_API_KEY: ${OPENAI_TUNNEL_API_KEY:?Set tunnel runtime key}
+      CONTROL_PLANE_TUNNEL_ID: ${OPENAI_TUNNEL_ID:?Set tunnel ID}
+      MCP_SERVER_URL: http://mcp:8000/mcp
+    depends_on:
+      mcp:
+        condition: service_healthy

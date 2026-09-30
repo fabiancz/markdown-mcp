@@ -1,0 +1,106 @@
+# Deploy, verify and recover
+
+## OAuth over HTTPS
+
+Use `examples/oauth/` with an HTTPS reverse proxy. The MCP host port binds only
+to `127.0.0.1`. Forward all paths, including discovery, consent, client registration,
+`/token`, `/auth/callback` and `/mcp`; preserve Authorization and disable buffering.
+An nginx location example is in `examples/nginx/mcp.conf`. Certificates and DNS
+are supplied by the operator. Set `PUBLIC_BASE_URL` to the exact public HTTPS origin.
+
+Create a GitHub OAuth App with `/auth/callback` on that origin. Set the Client ID
+and Client Secret separately from `GIT_PAT`. Add permitted numeric GitHub user
+IDs in `GITHUB_ALLOWED_USER_IDS`. Scope is `read:user`; local authorization grants
+read only. Provide the exact HTTPS MCP-client redirects in `OAUTH_REDIRECT_URIS`.
+Unknown users, missing configuration and invalid tokens are denied. CIMD is
+currently disabled; dynamic registration is supported with the configured redirects.
+Consent remains enabled. No client-controlled Host or forwarded header constructs
+the advertised OAuth URLs.
+
+OAuth state, encrypted upstream credentials and generated signing/storage keys
+live in `data/auth/`. Preserve the whole directory across recreation and upgrades.
+GitHub OAuth App responses without an upstream refresh token also have no MCP
+refresh token. They remain subject to expiry and live upstream validation; on
+expiry or GitHub revocation reconnect the client and repeat login/consent. The
+library's refresh path is tested with synthetic refresh-capable upstream responses,
+which does not assert GitHub OAuth Apps issue refresh tokens.
+
+## Secure MCP Tunnel (experimental)
+
+Use `examples/tunnel/`. It has two services, no published ports and the fixed
+internal target `http://mcp:8000/mcp`. Configure tunnel access in the intended
+OpenAI workspace and give only intended users access. Everyone using that tunnel
+has the same vault and the same local `tunnel_operator` read rights. It does not
+identify individual ChatGPT users.
+
+The tunnel service receives only its runtime credential and tunnel ID; it does
+not receive the Git PAT or mount vault/state directories. The MCP service receives
+no OpenAI runtime key. The official tunnel image is digest-pinned. Startup waits
+for MCP health; restart policy supports process failure recovery. Actual tunnel
+reconnection, access denial and ChatGPT read still require the P0-T deployment test.
+Never expose this unauthenticated internal MCP profile on a public host port.
+
+The upstream Docker deployment reference is
+[the official tunnel-client guide](https://github.com/openai/tunnel-client/blob/master/docs/deployment/docker.md).
+
+## Git and persistence
+
+The app uses a credential-free HTTPS clone URL plus username/PAT through a scoped
+Git credential helper. TLS verification remains on; redirects are rejected.
+Use a service account with read access to the selected repository. M1 performs
+clone/fetch only and requires no branch push/CR/merge rights. GitHub/GitLab/Forgejo
+HTTPS URLs are configurable; vendor PAT/scope enforcement must be verified on your
+instance. Provider API metadata is reserved for later write adapters.
+
+`repo/checkout` is managed service data. Do not use it as an editable Obsidian
+vault. Fetch reads the remote target commit without reset/pull or changing the
+checked-out branch; uncommitted changes generate a warning and are preserved.
+The application stages initial clone atomically inside `repo/`, detecting an
+incorrect existing clone/source instead of overwriting it. The default branch is
+discovered once and persisted. Run one active process per installation.
+
+Startup checks mount writability. On Linux, initialize ownership with
+`scripts/init-volumes.sh` (or the commands in README). For custom host locations,
+set `REPO_DIR` and `DATA_DIR`; container paths stay `/repo` and `/data`.
+
+## Health and acceptance
+
+`/health/live` exposes only process liveness. `/health/ready` checks an available
+snapshot without network fetch and returns 503 when unavailable. Authenticated
+`get_vault_status` returns counts, freshness and diagnostics without fetch.
+New data requests fetch by default; concurrent requests share the same job.
+Offline reads visibly serve the last successful snapshot or fail under strict
+policy. A failing first sync prevents ready startup.
+
+Before accepting production M1, complete the following against your actual client:
+
+1. OAuth discovery, allowed login, denied login, search and pinned read.
+2. Recreate the container; verify stored auth works and same-content snapshot persists.
+3. Revoke GitHub consent, confirm denial, then reconnect successfully.
+4. For tunnel: no additional OAuth, authorized/unauthorized workspace access,
+   restart/disconnection recovery and search/read matching revision.
+5. Confirm PAT/TLS and private Git connectivity from the deployed container.
+
+Local tests are evidence for implementation behavior, not a replacement for these
+external checks. No service is automatically deployed by the source implementation.
+
+## Upgrade and rebuild
+
+Back up both mounts and `.env` while the service is stopped. SQLite WAL files must
+be backed up consistently; copying a live DB alone is insufficient. Protect backups
+like the original private vault. For a released version: pull the chosen image,
+read migration notes, then recreate the service. Do not downgrade onto newer state.
+
+To rebuild only the derived index: stop MCP, move `data/index.sqlite` and any
+`index.sqlite-wal`/`index.sqlite-shm` aside, then start MCP. Keep `data/source.json`,
+`data/auth/`, `data/state.sqlite` (when future write phases create it) and all repo
+data. Startup automatically quarantines a corrupt derived index and rebuilds it.
+Index rebuild does not delete persistent identity/auth/job state. For a different
+Git repository, use a new pair of mount directories; no implicit migration/reset.
+
+Publication is a separate action. GitHub Actions builds/tests both architectures
+and promotes the tested images to `ghcr.io/fabiancz/markdown-mcp`. Version tags or
+manual dispatch on `main` publish stable releases; main pushes publish commit
+images. See [release instructions](releases.md). License selection, package public
+visibility, live ChatGPT acceptance and tunnel acceptance remain pending before
+calling this a public production release.

@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-30",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "scope": "Disposable localhost TLS/Basic-auth smart Git. Includes actual clone, fetch, object extraction, index publication and read. No WAN latency or private vault; host not constrained to 2 vCPU.",
+  "metrics": [
+    {
+      "notes": 1000,
+      "initial_clone_fetch_index_read_seconds": 0.461,
+      "unchanged_fetch_read_p50_ms": 164.25,
+      "unchanged_fetch_read_p95_ms": 181.253,
+      "fetches": 21,
+      "index_builds": 1
+    },
+    {
+      "notes": 10000,
+      "initial_clone_fetch_index_read_seconds": 2.797,
+      "unchanged_fetch_read_p50_ms": 175.67,
+      "unchanged_fetch_read_p95_ms": 216.572,
+      "fetches": 21,
+      "index_builds": 1
+    }
+  ]
+}

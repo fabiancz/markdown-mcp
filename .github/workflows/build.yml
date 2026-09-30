@@ -1,0 +1,150 @@
+name: Verify and publish containers
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version matching pyproject.toml (empty = current version)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: containers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      release: ${{ steps.metadata.outputs.release }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.10'
+      - name: Validate version and image metadata
+        id: metadata
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          release = os.environ['GITHUB_REF_TYPE'] == 'tag' or os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch'
+          requested = os.environ['GITHUB_REF_NAME'].removeprefix('v') if os.environ['GITHUB_REF_TYPE'] == 'tag' else os.environ['REQUESTED_VERSION'] or version
+          if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version):
+              raise SystemExit('Package version must be X.Y.Z')
+          if release and requested != version:
+              raise SystemExit(f'Release version {requested!r} does not match package version {version}')
+          tag = version if release else 'sha-' + os.environ['GITHUB_SHA'][:12]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"image=ghcr.io/{os.environ['GITHUB_REPOSITORY'].lower()}\ntag={tag}\nrelease={str(release).lower()}\n")
+          PY
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+      - run: uv build
+      - run: uv run python scripts/evaluate.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distributions
+          path: dist/
+
+  containers:
+    needs: verify
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.10'
+      - run: uv sync --locked
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build the image to be tested and published
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          provenance: false
+          tags: obsidian-read-mcp:ci-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Verify Compose, HTTPS Git and MCP
+        run: uv run python scripts/container_smoke.py --platform linux/${{ matrix.arch }} --image obsidian-read-mcp:ci-${{ matrix.arch }}
+      - name: Export the tested image
+        run: docker save obsidian-read-mcp:ci-${{ matrix.arch }} -o /tmp/image-${{ matrix.arch }}.tar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-${{ matrix.arch }}
+          path: /tmp/image-${{ matrix.arch }}.tar
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: [verify, containers]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ${{ needs.verify.outputs.image }}
+      TAG: ${{ needs.verify.outputs.tag }}
+      RELEASE: ${{ needs.verify.outputs.release }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: container-*
+          merge-multiple: true
+          path: /tmp/images
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the exact tested images and their multi-platform manifest
+        run: |
+          for arch in amd64 arm64; do
+            docker load -i "/tmp/images/image-$arch.tar"
+            docker tag "obsidian-read-mcp:ci-$arch" "$IMAGE:$TAG-$arch"
+            docker push "$IMAGE:$TAG-$arch"
+          done
+          docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          if [ "$RELEASE" = true ]; then
+            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$TAG"
+          fi

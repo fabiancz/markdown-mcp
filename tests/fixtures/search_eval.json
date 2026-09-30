@@ -1,0 +1,355 @@
+[
+  {
+    "request": {
+      "query": "záloha",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "backup",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "síť",
+      "limit": 5
+    },
+    "expected": "topics/Network.md"
+  },
+  {
+    "request": {
+      "query": "network",
+      "limit": 5
+    },
+    "expected": "topics/Network.md"
+  },
+  {
+    "request": {
+      "query": "certifikáty",
+      "limit": 5
+    },
+    "expected": "topics/Certificates.md"
+  },
+  {
+    "request": {
+      "query": "certificates",
+      "limit": 5
+    },
+    "expected": "topics/Certificates.md"
+  },
+  {
+    "request": {
+      "query": "nasazení",
+      "limit": 5
+    },
+    "expected": "topics/Deployment.md"
+  },
+  {
+    "request": {
+      "query": "deployment",
+      "limit": 5
+    },
+    "expected": "topics/Deployment.md"
+  },
+  {
+    "request": {
+      "query": "sledování",
+      "limit": 5
+    },
+    "expected": "topics/Monitoring.md"
+  },
+  {
+    "request": {
+      "query": "monitoring",
+      "limit": 5
+    },
+    "expected": "topics/Monitoring.md"
+  },
+  {
+    "request": {
+      "query": "databáze",
+      "limit": 5
+    },
+    "expected": "topics/Database.md"
+  },
+  {
+    "request": {
+      "query": "database",
+      "limit": 5
+    },
+    "expected": "topics/Database.md"
+  },
+  {
+    "request": {
+      "query": "mezipaměť",
+      "limit": 5
+    },
+    "expected": "topics/Cache.md"
+  },
+  {
+    "request": {
+      "query": "cache",
+      "limit": 5
+    },
+    "expected": "topics/Cache.md"
+  },
+  {
+    "request": {
+      "query": "bezpečnost",
+      "limit": 5
+    },
+    "expected": "topics/Security.md"
+  },
+  {
+    "request": {
+      "query": "security",
+      "limit": 5
+    },
+    "expected": "topics/Security.md"
+  },
+  {
+    "request": {
+      "query": "kontejnery",
+      "limit": 5
+    },
+    "expected": "topics/Containers.md"
+  },
+  {
+    "request": {
+      "query": "containers",
+      "limit": 5
+    },
+    "expected": "topics/Containers.md"
+  },
+  {
+    "request": {
+      "query": "větve",
+      "limit": 5
+    },
+    "expected": "topics/Git.md"
+  },
+  {
+    "request": {
+      "query": "branches",
+      "limit": 5
+    },
+    "expected": "topics/Git.md"
+  },
+  {
+    "request": {
+      "query": "úložiště",
+      "limit": 5
+    },
+    "expected": "topics/Storage.md"
+  },
+  {
+    "request": {
+      "query": "storage",
+      "limit": 5
+    },
+    "expected": "topics/Storage.md"
+  },
+  {
+    "request": {
+      "query": "kalendář",
+      "limit": 5
+    },
+    "expected": "topics/Calendar.md"
+  },
+  {
+    "request": {
+      "query": "calendar",
+      "limit": 5
+    },
+    "expected": "topics/Calendar.md"
+  },
+  {
+    "request": {
+      "query": "cestování",
+      "limit": 5
+    },
+    "expected": "topics/Travel.md"
+  },
+  {
+    "request": {
+      "query": "travel",
+      "limit": 5
+    },
+    "expected": "topics/Travel.md"
+  },
+  {
+    "request": {
+      "query": "vaření",
+      "limit": 5
+    },
+    "expected": "topics/Cooking.md"
+  },
+  {
+    "request": {
+      "query": "cooking",
+      "limit": 5
+    },
+    "expected": "topics/Cooking.md"
+  },
+  {
+    "request": {
+      "query": "čtení",
+      "limit": 5
+    },
+    "expected": "topics/Reading.md"
+  },
+  {
+    "request": {
+      "query": "reading",
+      "limit": 5
+    },
+    "expected": "topics/Reading.md"
+  },
+  {
+    "request": {
+      "query": "výzkum",
+      "limit": 5
+    },
+    "expected": "topics/Research.md"
+  },
+  {
+    "request": {
+      "query": "research",
+      "limit": 5
+    },
+    "expected": "topics/Research.md"
+  },
+  {
+    "request": {
+      "query": "projekty",
+      "limit": 5
+    },
+    "expected": "topics/Projects.md"
+  },
+  {
+    "request": {
+      "query": "projects",
+      "limit": 5
+    },
+    "expected": "topics/Projects.md"
+  },
+  {
+    "request": {
+      "query": "rozpočet",
+      "limit": 5
+    },
+    "expected": "topics/Budget.md"
+  },
+  {
+    "request": {
+      "query": "budget",
+      "limit": 5
+    },
+    "expected": "topics/Budget.md"
+  },
+  {
+    "request": {
+      "query": "zahrada",
+      "limit": 5
+    },
+    "expected": "topics/Garden.md"
+  },
+  {
+    "request": {
+      "query": "garden",
+      "limit": 5
+    },
+    "expected": "topics/Garden.md"
+  },
+  {
+    "request": {
+      "query": "psaní",
+      "limit": 5
+    },
+    "expected": "topics/Writing.md"
+  },
+  {
+    "request": {
+      "query": "writing",
+      "limit": 5
+    },
+    "expected": "topics/Writing.md"
+  },
+  {
+    "request": {
+      "query": "zaloha",
+      "folder": "topics",
+      "tags": [
+        "reference"
+      ],
+      "frontmatter": {
+        "active": true
+      },
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "\"docker compose\"",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "192.0.2.1",
+      "mode": "literal",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "https://example.invalid/a?b=c",
+      "mode": "literal",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "Backup",
+      "mode": "filename",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Backup.md"
+  },
+  {
+    "request": {
+      "query": "transactions schema",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Database.md"
+  },
+  {
+    "request": {
+      "query": "Git immutable",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Git.md"
+  },
+  {
+    "request": {
+      "query": "certifikaty",
+      "folder": "topics",
+      "limit": 5
+    },
+    "expected": "topics/Certificates.md"
+  }
+]

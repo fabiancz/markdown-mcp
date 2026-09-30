@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-30",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.3",
+  "sqlite": "3.53.1",
+  "cases": 48,
+  "metrics": [
+    {
+      "notes": 1000,
+      "index_build_seconds": 0.05,
+      "warm_search_p50_ms": 2.123,
+      "warm_search_p95_ms": 4.066,
+      "top5_recall": 1.0,
+      "mrr_at_5": 1.0,
+      "unweighted_bm25_fulltext_top5_recall": 1.0
+    },
+    {
+      "notes": 10000,
+      "index_build_seconds": 0.487,
+      "warm_search_p50_ms": 12.865,
+      "warm_search_p95_ms": 32.371,
+      "top5_recall": 1.0,
+      "mrr_at_5": 1.0,
+      "unweighted_bm25_fulltext_top5_recall": 1.0
+    }
+  ],
+  "scope": "Synthetic alias/title and passage retrieval; warm service calls pinned to an indexed generation. No network fetch. Host resources are not constrained to 2 vCPU. Not a private-vault or production benchmark."
+}
