@@ -3,75 +3,209 @@
 A self-hosted Python/FastMCP server for a single Git-backed Markdown vault.
 Search, list, read, outline and backlinks use immutable commit snapshots and
 SQLite FTS5. No running Obsidian, embedding service or external AI API is needed.
-This 0.1.1 implementation supports read only.
 
-Deployment profiles:
+The current version supports read only. Your notes can be stored in a GitHub,
+GitLab or Forgejo repository. Obsidian does not need to run on the server.
 
-- HTTPS with a GitHub OAuth App, numeric user-ID allowlist and persistent encrypted
-  OAuth state. Git credentials are independent of the GitHub login.
-- An isolated MCP container behind Secure MCP Tunnel, using the shared local
-  principal `tunnel_operator`. The example does not publish MCP ports.
+## Installation
 
-Read and OAuth flows are tested locally. Actual ChatGPT login and tunnel workspace
-access still require deployment verification. The tunnel example is experimental
-until that test passes. See [verification evidence](docs/verification.md).
-The examples use `IMAGE=ghcr.io/fabiancz/markdown-mcp:latest`. Wait for a
-successful release publication before pulling it, or build the same tag locally
-as shown below.
-The image namespace is `ghcr.io/fabiancz/markdown-mcp`; license selection remains
-pending. See [container releases](docs/releases.md) for publishing and visibility.
+You need Docker Engine with Docker Compose and a Git repository containing your
+Markdown notes. The application clones the repository automatically; you do not
+need Python, a local source checkout or an existing vault clone on the server.
 
-## Run the test image
+Choose how your AI client will connect:
 
-Build once as a developer:
+| Variant | When to use it | Requirements |
+| --- | --- | --- |
+| **OAuth over HTTPS** | For clients supporting remote MCP over Streamable HTTP and OAuth, such as ChatGPT or Claude custom connectors | A public HTTPS endpoint, a GitHub OAuth App and an allowed GitHub account |
+| **OpenAI Secure MCP Tunnel** | For supported OpenAI clients while keeping the MCP server inside your private network | An OpenAI tunnel, an API key and permission to use the tunnel |
 
-```sh
-docker build -t ghcr.io/fabiancz/markdown-mcp:latest .
-```
+GitHub OAuth is used to sign in to the MCP server. It is independent of where
+your notes are hosted: you can sign in with GitHub and read a GitLab or Forgejo
+repository. Client compatibility depends on its transport and OAuth support;
+this project does not claim verified compatibility with every MCP client.
 
-Choose a profile and copy its `docker-compose.yaml` and `.env.example` into a new
-installation directory. Rename `.env.example` to `.env`, fill in your HTTPS Git
-URL, username and read-capable PAT, then fill in OAuth or tunnel configuration.
-For a trusted private Git server using plain HTTP, explicitly set
-`GIT_ALLOW_HTTP=true`; credentials and note content then travel unencrypted.
-Prepare empty `repo/` and `data/` directories owned by UID/GID 10001:
+Claude's remote connectors require a publicly reachable server; see
+[Claude's custom connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+### Prepare your installation directory
+
+Create a directory for the deployment and two empty persistent directories:
 
 ```sh
-mkdir -p repo data
+mkdir -p markdown-mcp/repo markdown-mcp/data
+cd markdown-mcp
 sudo chown 10001:10001 repo data
 chmod 700 repo data
-chmod 600 .env
-docker compose up -d
 ```
 
-For OAuth, configure your HTTPS proxy and connect a client to
-`https://YOUR_HOST/mcp`. Register the GitHub OAuth App callback as
-`https://YOUR_HOST/auth/callback`. Set `OAUTH_REDIRECT_URIS` to the **exact callback
-URL(s) provided by your MCP client**; the example client URL is a placeholder.
-The first startup clones the target branch into `repo/checkout` and creates
-`data/index.sqlite`. Both directories must be writable. Keep one active replica.
+Copy the Compose file and environment example for your chosen variant, using the
+links in the following sections. Save them as `docker-compose.yaml` and `.env`:
 
-After an image is published, the examples track the latest stable release with
-`IMAGE=ghcr.io/fabiancz/markdown-mcp:latest`. To update, run `docker compose pull`
-and `docker compose up -d`. To pin a deployment, set `IMAGE` to a specific release
-tag instead. Operators need no Python or local source build. This repository does
-not claim a nonexistent registry image.
+```text
+markdown-mcp/
+├── docker-compose.yaml
+├── .env
+├── repo/
+└── data/
+```
 
-See [deployment and upgrade](docs/deployment.md), [environment reference](docs/configuration.md)
-and [tool contracts](docs/contracts.md). A typical tool workflow is:
+The application runs as UID/GID `10001:10001`, so both directories must be
+writable by that user. It stores the managed Git clone in `repo/checkout/` and
+the search index and persistent application state in `data/`.
+
+### Configure your Git repository
+
+Edit these settings in `.env` for either variant:
+
+```dotenv
+IMAGE=ghcr.io/fabiancz/markdown-mcp:sha-0dbe59cbae24
+GIT_PROVIDER=forgejo
+GIT_REPO_URL=https://forge.example/owner/vault.git
+GIT_USERNAME=your-service-account
+GIT_PAT=your-repository-read-token
+GIT_TARGET_BRANCH=
+```
+
+- Set `GIT_PROVIDER` to `github`, `gitlab` or `forgejo`.
+- Use the repository's HTTPS clone URL without credentials embedded in it.
+- Provide an account and PAT with read access to that repository.
+- Leave `GIT_TARGET_BRANCH` empty to use the repository's default branch.
+- Keep `WRITE_ENABLED=false`, `WRITE_DEFAULT_MODE=review` and `YOLO_ENABLED=false`.
+
+For a Git server on a trusted private network without HTTPS, you can explicitly
+enable HTTP:
+
+```dotenv
+GIT_REPO_URL=http://192.0.2.10:3000/owner/vault.git
+GIT_ALLOW_HTTP=true
+```
+
+The host and port must be reachable from the container. HTTP sends credentials
+and note content unencrypted. SSH repository URLs are currently unsupported.
+
+The image above is a published commit image with HTTP support. The examples use
+`:latest`, which is created by stable release publication; pushes to `main`
+publish `sha-...` tags. Choose an existing tag from
+[container packages](https://github.com/fabiancz/markdown-mcp/pkgs/container/markdown-mcp)
+and see [release instructions](https://github.com/fabiancz/markdown-mcp/blob/main/docs/releases.md)
+for tag details.
+
+### OAuth
+
+Use these files:
+
+- [docker-compose.yaml](https://github.com/fabiancz/markdown-mcp/blob/main/examples/oauth/docker-compose.yaml)
+- [.env.example](https://github.com/fabiancz/markdown-mcp/blob/main/examples/oauth/.env.example)
+
+1. Configure a domain and HTTPS reverse proxy for the MCP server. The Compose
+   service listens on `127.0.0.1:8000` on the Docker host by default. Forward all
+   paths, including OAuth discovery and callbacks, to this service. An
+   [nginx example](https://github.com/fabiancz/markdown-mcp/blob/main/examples/nginx/mcp.conf)
+   is included.
+2. Create a GitHub OAuth App. Set its homepage to your public origin and its
+   authorization callback URL to `https://YOUR_HOST/auth/callback`.
+3. Fill in the OAuth settings in `.env`:
+
+```dotenv
+PUBLIC_BASE_URL=https://mcp.example.com
+GITHUB_OAUTH_CLIENT_ID=your-oauth-app-client-id
+GITHUB_OAUTH_CLIENT_SECRET=your-oauth-app-client-secret
+GITHUB_ALLOWED_USER_IDS=123456
+OAUTH_REDIRECT_URIS=https://your-client.example/oauth/callback
+```
+
+`GITHUB_ALLOWED_USER_IDS` is a comma-separated list of permitted numeric GitHub
+user IDs, not usernames. `OAUTH_REDIRECT_URIS` must contain the exact HTTPS
+callback URL(s) used by your MCP client. The URL above is a placeholder; replace
+it with your client's actual callback. The GitHub OAuth App secret and the Git
+repository PAT are separate credentials.
+
+Start the service:
+
+```sh
+chmod 600 .env
+docker compose pull
+docker compose up -d
+docker compose logs --tail=100 mcp
+```
+
+Add `https://YOUR_HOST/mcp` as a remote MCP connection in your AI client and
+complete GitHub sign-in and consent with an allowed account.
+
+### Tunnel
+
+Use these files:
+
+- [docker-compose.yaml](https://github.com/fabiancz/markdown-mcp/blob/main/examples/tunnel/docker-compose.yaml)
+- [.env.example](https://github.com/fabiancz/markdown-mcp/blob/main/examples/tunnel/.env.example)
+
+This variant runs the MCP server and OpenAI's tunnel client in two containers.
+It uses outbound HTTPS to OpenAI, so you do not need a public domain, an HTTPS
+reverse proxy or inbound internet ports for the MCP server.
+
+1. Create a tunnel in [OpenAI Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels).
+   Associate it with the Platform organization and ChatGPT workspace that will
+   use it, and copy its tunnel ID.
+2. Create an [OpenAI API key](https://platform.openai.com/api-keys) in that
+   organization. The tunnel operator needs **Tunnels Read + Use** permission.
+3. Fill in the tunnel settings in `.env`:
+
+```dotenv
+OPENAI_TUNNEL_ID=tunnel_...
+OPENAI_TUNNEL_API_KEY=sk-...
+```
+
+Keep the pinned `TUNNEL_IMAGE` from the example. `OPENAI_TUNNEL_API_KEY` is an
+OpenAI API key used by the tunnel client; it is separate from `GIT_PAT`.
+
+Start both services:
+
+```sh
+chmod 600 .env
+docker compose pull
+docker compose up -d
+docker compose logs --tail=100 mcp tunnel
+```
+
+In ChatGPT, create a developer-mode MCP connection, choose **Tunnel**, and select
+your tunnel or enter its ID. Developer-mode access is separate from Platform
+tunnel permissions. Other supported OpenAI clients use their tunnel connection
+settings. See the [OpenAI Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+
+This profile needs no additional GitHub OAuth sign-in. Everyone allowed to use
+the tunnel receives the same read access to the configured vault. Keep the MCP
+port private, as in the supplied Compose file. Deployment verification status is
+documented in [verification evidence](https://github.com/fabiancz/markdown-mcp/blob/main/docs/verification.md).
+
+## Using the server
+
+The first startup clones your repository and builds the index. Subsequent
+requests fetch remote changes by default.
+
+A typical workflow is:
 
 1. `search_notes(query="zaloha")` returns paths, revisions and line snippets.
-2. `read_note(path=..., snapshot_id=...)` returns those same original lines.
+2. `read_note(path=..., snapshot_id=...)` reads the matching version of the note.
 3. Continue a long note with `next_start_line` and the same snapshot ID.
 
-Fulltext handles Czech accents, words and quoted phrases, with ALL semantics.
-It does not provide stemming or semantic similarity. Use `literal` for commands,
-URLs or punctuation, and `filename` for paths, titles and aliases.
+Fulltext handles Czech accents, words and quoted phrases. Use `literal` for
+commands, URLs or punctuation, and `filename` for paths, titles and aliases.
+Stemming and semantic similarity are not included.
+
+For updates, pull your chosen image and recreate the services with
+`docker compose pull` and `docker compose up -d`. Preserve `repo/`, `data/` and
+`.env`; back them up before upgrades. Run one active application instance per
+installation.
+
+See [deployment and recovery](https://github.com/fabiancz/markdown-mcp/blob/main/docs/deployment.md),
+[environment reference](https://github.com/fabiancz/markdown-mcp/blob/main/docs/configuration.md)
+and [tool contracts](https://github.com/fabiancz/markdown-mcp/blob/main/docs/contracts.md).
 
 ## Develop
 
 Python 3.12, Git and uv are required. Tests use temporary synthetic repositories
-and mock GitHub responses, including one disposable HTTPS smart-Git server.
+and mock GitHub responses, including disposable HTTP and HTTPS smart-Git servers.
 
 ```sh
 uv sync --locked
@@ -80,11 +214,15 @@ uv run ruff format --check .
 uv run pytest
 uv build
 uv run python scripts/evaluate.py
+docker build -t ghcr.io/fabiancz/markdown-mcp:latest .
 uv run python scripts/container_smoke.py --platform linux/arm64
+uv run python scripts/container_smoke.py --platform linux/arm64 --git-http
 ```
 
-The last command needs Docker Engine and `host.docker.internal` resolution from
-containers. Linux hosts need that name mapped to the host gateway. GitHub Actions
-tests both amd64 and arm64 on hosted Ubuntu runners before publishing the exact
-tested images to GHCR. Pull requests verify only; `main` publishes commit images,
-and version tags/manual dispatch publish releases. See [release instructions](docs/releases.md).
+The container smoke commands need Docker Engine and `host.docker.internal`
+resolution from containers. Linux hosts need that name mapped to the host gateway.
+Repeat container tests for `linux/amd64` with an image built for that architecture.
+GitHub Actions tests both amd64 and arm64 on hosted Ubuntu runners before
+publishing the exact tested images to GHCR. Pull requests verify only; `main`
+publishes commit images, and version tags/manual dispatch publish releases. See
+[release instructions](https://github.com/fabiancz/markdown-mcp/blob/main/docs/releases.md).
