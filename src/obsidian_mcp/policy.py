@@ -47,7 +47,11 @@ class Policy:
         return not self.allowed or any(path.startswith(p + "/") for p in self.allowed)
 
     def authorize(self, principal: Principal, operation: str) -> None:
-        if operation != "read" or "reader" not in principal.roles:
+        if (
+            operation not in {"read", "write"}
+            or ("reader" if operation == "read" else "writer") not in principal.roles
+        ):
             raise DomainError(
-                "PERMISSION_DENIED", "The principal is not permitted to read this vault"
+                "PERMISSION_DENIED",
+                "The principal is not permitted to perform this vault operation",
             )

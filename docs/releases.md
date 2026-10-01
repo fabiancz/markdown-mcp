@@ -37,11 +37,11 @@ exact version when you want to pin a deployment.
 From this product checkout, update package metadata and the lockfile together:
 
 ```sh
-uv version --no-sync 0.1.1
+uv version --no-sync 0.2.0
 ```
 
 Review and commit the version change, then push the commit and its tag using your
-normal Git workflow. A tag such as `v0.1.1` starts publication. Alternatively,
+normal Git workflow. A tag such as `v0.2.0` starts publication. Alternatively,
 after pushing the updated version to `main`, run **Verify and publish containers**
 from the Actions page and enter the matching version (or leave the input empty).
 Do not reuse a released version for different code. Source/tag pushes and registry
@@ -55,7 +55,7 @@ access settings, grant this repository Actions access to the package.
 
 The examples use `IMAGE=ghcr.io/fabiancz/markdown-mcp:latest`. To pin a deployment,
 set `.env` to a released reference such as
-`IMAGE=ghcr.io/fabiancz/markdown-mcp:0.1.1`, after that version exists.
+`IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.0`, after that version exists.
 Run `docker compose pull` and `docker compose up -d` using the existing mounts.
 License selection and real ChatGPT/tunnel acceptance remain separate release tasks.
 

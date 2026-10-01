@@ -27,8 +27,9 @@ not a probability. A truncated snippet may contain only part of a long line.
 Tools are `search_notes`, `list_notes`, `read_note`, `get_note_outline`,
 `get_backlinks`, `get_vault_status` and a harmless `ping` connectivity probe.
 All tools require the current allowed identity. `ping` has no note data.
-Annotations are read-only/non-destructive; freshness can fetch the configured
-remote and update local cache. No write tools are registered.
+Read tools are read-only/non-destructive; freshness can fetch the configured
+remote and update local cache. When write is enabled or a durable change journal
+exists, review tools are also registered; their contracts are in [write.md](write.md).
 
 `search_notes` defaults to fulltext ALL terms; words and balanced quoted phrases
 are the entire query language. Raw FTS operators, unquoted punctuation, prefix
@@ -74,10 +75,7 @@ Codes include `INVALID_QUERY`, `INVALID_FILTER`, `INVALID_PATH`, `INVALID_RANGE`
 `AUTH_STATE_INVALID` and `PERMISSION_DENIED`. HTTP auth rejection remains a 401,
 not a successful data response. Messages never include credentials or hidden paths.
 
-`models.py` separates `AuthPolicy`, `SnapshotSource`, `VaultReader`, `ChangeStore`,
-`GitWorkspace` and `ForgeAdapter`. Future changes use a unique `change_id` scoped
-to owner/repository. Idempotency binds owner/repo/key to the request hash; reusing
-that key for another payload must be rejected. Prepared, processing, CR-open,
-merged, needs-attention, blocked-policy, failed and closed are distinct states.
-`visible_in_read` is independent of merge acceptance. These write contracts are
-interfaces only in this release; no write execution or durable job store exists.
+`models.py` separates authorization, snapshot, reader, change-store, workspace
+and forge-adapter contracts. Durable writes are scoped to owner/repository and
+expose accepted, PR-open, merged and read visibility independently. See
+[the write contract](write.md) for operations, states and errors.

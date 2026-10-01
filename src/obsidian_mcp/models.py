@@ -7,6 +7,18 @@ from pydantic import BaseModel, Field
 
 
 class ErrorCode(StrEnum):
+    INVALID_OPERATION = "INVALID_OPERATION"
+    REVISION_MISMATCH = "REVISION_MISMATCH"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+    DIFF_MISMATCH = "DIFF_MISMATCH"
+    CHANGE_NOT_FOUND = "CHANGE_NOT_FOUND"
+    CHANGE_STATE = "CHANGE_STATE"
+    WRITE_DISABLED = "WRITE_DISABLED"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    BRANCH_CHANGED = "BRANCH_CHANGED"
+    POLICY_CHANGED = "POLICY_CHANGED"
+    INVALID_CONTENT = "INVALID_CONTENT"
     INVALID_CURSOR = "INVALID_CURSOR"
     INVALID_QUERY = "INVALID_QUERY"
     INVALID_FILTER = "INVALID_FILTER"
@@ -60,9 +72,16 @@ class Envelope(BaseModel):
 
 class ChangeStatus(StrEnum):
     PREPARED = "prepared"
-    PROCESSING = "processing"
-    CR_OPEN = "cr_open"
+    QUEUED = "queued"
+    VALIDATING = "validating"
+    COMMITTED = "committed"
+    PUSHED = "pushed"
+    AWAITING_REVIEW = "awaiting_review"
+    RETRY_WAIT = "retry_wait"
     MERGED = "merged"
+    INDEXED = "indexed"
+    NO_CHANGE = "no_change"
+    CANCELLED = "cancelled"
     NEEDS_ATTENTION = "needs_attention"
     BLOCKED_POLICY = "blocked_policy"
     FAILED = "failed"
@@ -96,15 +115,21 @@ class VaultReader(Protocol):
 
 
 class ChangeStore(Protocol):
-    def get(self, change_id: str, owner: str) -> Change: ...
-    def reserve(self, change: Change) -> Change: ...
+    def get(self, change_id: str, owner: str | None = None) -> dict: ...
+    def reserve(self, change: dict) -> dict: ...
+    def save(self, change: dict, event: str) -> None: ...
 
 
 class GitWorkspace(Protocol):
-    def create_worktree(self, change_id: str, base_commit: str) -> str: ...
+    def prepare(self, base: str, operations: list[dict]) -> dict: ...
+    def commit(self, change: dict) -> str: ...
+    def publish(self, change: dict) -> None: ...
 
 
 class ForgeAdapter(Protocol):
     def capabilities(self) -> dict[str, bool | None]: ...
-    async def create_cr(self, branch: str, target: str, title: str) -> str: ...
-    async def merge(self, cr_url: str, expected_head: str) -> dict: ...
+    async def create_or_find_cr(self, change: dict) -> dict: ...
+    async def get_cr(self, number: int) -> dict: ...
+    async def verify(self) -> dict: ...
+    async def find(self, change: dict) -> dict | None: ...
+    def validate(self, pr: dict, change: dict) -> dict: ...

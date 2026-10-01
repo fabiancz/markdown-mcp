@@ -12,6 +12,7 @@ from pathlib import Path
 from .config import Settings
 from .models import DomainError
 from .policy import Policy, path_key
+from .repo_lock import file_lock
 
 
 def atomic_json(path: Path, data: dict):
@@ -50,7 +51,14 @@ class ManagedGit:
             self.branch = self.branch or saved.get("branch", "")
         self.identity_file = identity
 
-    def run(self, args: list[str], *, cwd: Path | None = None, input: bytes | None = None) -> bytes:
+    def run(
+        self,
+        args: list[str],
+        *,
+        cwd: Path | None = None,
+        input: bytes | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> bytes:
         helper_path = Path(__file__).with_name("credential_helper.py")
         helper = f"{shlex.quote(sys.executable)} {shlex.quote(str(helper_path))}"
         env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "VAULT_GIT_"))}
@@ -65,8 +73,18 @@ class ManagedGit:
                 "VAULT_GIT_PAT": self.settings.git_pat.get_secret_value(),
             }
         )
+        env.update(extra_env or {})
         command = [
             "git",
+            "--literal-pathspecs",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.attributesFile=" + os.devnull,
+            "-c",
+            "submodule.recurse=false",
+            "-c",
+            "commit.gpgSign=false",
             "-c",
             "credential.helper=",
             "-c",
@@ -79,6 +97,34 @@ class ManagedGit:
             "core.hooksPath=" + os.devnull,
             *args,
         ]
+        # Even `status` may run a repository-defined clean/process filter. Discover only
+        # configuration keys, then override every filter without evaluating its command.
+        if cwd is not None and (cwd / ".git").exists():
+            try:
+                configured = subprocess.run(
+                    ["git", "config", "--includes", "--name-only", "--get-regexp", r"^filter\."],
+                    cwd=cwd,
+                    env=env,
+                    capture_output=True,
+                    timeout=self.settings.git_timeout_seconds,
+                )
+                if configured.returncode not in {0, 1}:
+                    raise OSError()
+                names = {key.rsplit(".", 1)[0] for key in configured.stdout.decode().splitlines()}
+                if len(names) > 1000:
+                    raise OSError()
+                for name in sorted(names):
+                    for key, value in [
+                        ("clean", ""),
+                        ("smudge", ""),
+                        ("process", ""),
+                        ("required", "false"),
+                    ]:
+                        command[1:1] = ["-c", name + "." + key + "=" + value]
+            except (OSError, UnicodeError, subprocess.TimeoutExpired):
+                raise DomainError(
+                    "SOURCE_MISMATCH", "Cannot safely inspect Git configuration"
+                ) from None
         if self.settings.git_ca_bundle:
             command[1:1] = ["-c", "http.sslCAInfo=" + str(self.settings.git_ca_bundle)]
         try:
@@ -147,7 +193,14 @@ class ManagedGit:
             self.identity_file, {"source": self.settings.source_identity, "branch": self.branch}
         )
 
+    def lock(self):
+        return file_lock(self.root / ".repo.lock")
+
     def sync(self) -> tuple[str, list[tuple[str, bytes]], list[str]]:
+        with self.lock():
+            return self._sync()
+
+    def _sync(self) -> tuple[str, list[tuple[str, bytes]], list[str]]:
         self.initialize()
         self.fetch_count += 1
         self.run(

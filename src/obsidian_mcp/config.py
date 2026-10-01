@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     write_enabled: bool = False
     write_default_mode: Literal["review", "yolo"] = "review"
     yolo_enabled: bool = False
+    github_write_user_ids: str = ""
+    write_max_operations: int = 50
+    write_max_bytes: int = 1048576
+    write_poll_seconds: float = 10
+    forge_timeout_seconds: float = 15
     allowed_folders: str = ""
     excluded_folders: str = ".git,.obsidian,.trash,repo,data"
     max_file_bytes: int = 1048576
@@ -84,8 +89,21 @@ class Settings(BaseSettings):
             or "@{" in self.git_target_branch
         ):
             raise ValueError("Invalid target branch")
-        if self.write_enabled or self.yolo_enabled or self.write_default_mode != "review":
-            raise ValueError("This release supports read only; write and YOLO must remain disabled")
+        if self.yolo_enabled or self.write_default_mode != "review":
+            raise ValueError("This release supports review only; YOLO must remain disabled")
+        if self.write_enabled and self.git_provider != "forgejo":
+            raise ValueError("Write currently requires GIT_PROVIDER=forgejo")
+        if not self.write_user_ids.issubset(self.allowed_user_ids):
+            raise ValueError("GITHUB_WRITE_USER_IDS must be a subset of GITHUB_ALLOWED_USER_IDS")
+        if any(not id.isdecimal() for id in self.write_user_ids):
+            raise ValueError("Write allowlist must contain numeric GitHub user IDs")
+        for value in (self.git_commit_name, self.git_commit_email):
+            if not value or any(c in value for c in "\n\r\0<>"):
+                raise ValueError("Invalid service commit identity")
+        if self.write_enabled and not re.fullmatch(
+            r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.repository_id
+        ):
+            raise ValueError("Forgejo requires a valid owner/repository ID")
         if self.deployment_mode == "oauth":
             public = urlsplit(self.public_base_url)
             if (
@@ -113,6 +131,10 @@ class Settings(BaseSettings):
                     raise ValueError("OAuth client redirect URIs must be exact HTTPS URLs")
         for name in (
             "git_timeout_seconds",
+            "forge_timeout_seconds",
+            "write_max_operations",
+            "write_max_bytes",
+            "write_poll_seconds",
             "max_file_bytes",
             "max_response_bytes",
             "max_index_bytes",
@@ -129,6 +151,7 @@ class Settings(BaseSettings):
                 api.scheme not in ({"https", "http"} if self.git_allow_http else {"https"})
                 or not api.hostname
                 or api.username
+                or api.password
                 or api.query
                 or api.fragment
             ):
@@ -141,6 +164,10 @@ class Settings(BaseSettings):
     @property
     def allowed_user_ids(self) -> frozenset[str]:
         return frozenset(x.strip() for x in self.github_allowed_user_ids.split(",") if x.strip())
+
+    @property
+    def write_user_ids(self) -> frozenset[str]:
+        return frozenset(x.strip() for x in self.github_write_user_ids.split(",") if x.strip())
 
     @property
     def redirect_uris(self) -> list[str]:

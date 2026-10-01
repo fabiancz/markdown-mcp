@@ -7,6 +7,7 @@ import hmac
 import json
 import re
 import sqlite3
+import threading
 import time
 import uuid
 
@@ -83,6 +84,7 @@ class Reader:
         self.source = source or ManagedGit(settings)
         self.index = Index(settings)
         self.policy = Policy(settings.allowed_folders, settings.excluded_folders)
+        self.sync_lock = threading.Lock()
         self.task: asyncio.Task | None = None
         self.last_sync = 0.0
         self.last_failure: str | None = None
@@ -91,6 +93,10 @@ class Reader:
         self.cursor_key = persistent_secret(settings.data_root / "auth" / "cursor.key")
 
     def _synchronize(self) -> Snapshot:
+        with self.sync_lock:
+            return self._synchronize_locked()
+
+    def _synchronize_locked(self) -> Snapshot:
         try:
             commit, _, warnings = self.source.sync()
             active = self.index.active()

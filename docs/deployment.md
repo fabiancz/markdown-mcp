@@ -11,7 +11,7 @@ are supplied by the operator. Set `PUBLIC_BASE_URL` to the exact public HTTPS or
 Create a GitHub OAuth App with `/auth/callback` on that origin. Set the Client ID
 and Client Secret separately from `GIT_PAT`. Add permitted numeric GitHub user
 IDs in `GITHUB_ALLOWED_USER_IDS`. Scope is `read:user`; local authorization grants
-read only. Provide the exact HTTPS MCP-client redirects in `OAUTH_REDIRECT_URIS`.
+read, with optional write for the explicit `GITHUB_WRITE_USER_IDS` subset. Provide the exact HTTPS MCP-client redirects in `OAUTH_REDIRECT_URIS`.
 Unknown users, missing configuration and invalid tokens are denied. CIMD is
 currently disabled; dynamic registration is supported with the configured redirects.
 Consent remains enabled. No client-controlled Host or forwarded header constructs
@@ -30,7 +30,7 @@ which does not assert GitHub OAuth Apps issue refresh tokens.
 Use `examples/tunnel/`. It has two services, no published ports and the fixed
 internal target `http://mcp:8000/mcp`. Configure tunnel access in the intended
 OpenAI workspace and give only intended users access. Everyone using that tunnel
-has the same vault and the same local `tunnel_operator` read rights. It does not
+has the same vault and the same local `tunnel_operator` rights (write too when enabled). It does not
 identify individual ChatGPT users.
 
 The tunnel service receives only its runtime credential and tunnel ID; it does
@@ -56,7 +56,7 @@ to MCP only; OAuth's public origin still requires HTTPS. SSH is unsupported.
 Use a service account with read access to the selected repository. M1 performs
 clone/fetch only and requires no branch push/CR/merge rights. GitHub/GitLab/Forgejo
 HTTPS URLs are configurable; vendor PAT/scope enforcement must be verified on your
-instance. Provider API metadata is reserved for later write adapters.
+instance. Forgejo review write uses the same PAT for Git and API; see [write setup](write.md).
 
 `repo/checkout` is managed service data. Do not use it as an editable Obsidian
 vault. Fetch reads the remote target commit without reset/pull or changing the
@@ -99,7 +99,7 @@ read migration notes, then recreate the service. Do not downgrade onto newer sta
 
 To rebuild only the derived index: stop MCP, move `data/index.sqlite` and any
 `index.sqlite-wal`/`index.sqlite-shm` aside, then start MCP. Keep `data/source.json`,
-`data/auth/`, `data/state.sqlite` (when future write phases create it) and all repo
+`data/auth/`, `data/state.sqlite` and all repo
 data. Startup automatically quarantines a corrupt derived index and rebuilds it.
 Index rebuild does not delete persistent identity/auth/job state. For a different
 Git repository, use a new pair of mount directories; no implicit migration/reset.
@@ -110,3 +110,17 @@ manual dispatch on `main` publish stable releases; main pushes publish commit
 images. See [release instructions](releases.md). License selection, package public
 visibility, live ChatGPT acceptance and tunnel acceptance remain pending before
 calling this a public production release.
+
+## Forgejo review acceptance
+
+Version 0.2.0 supports opt-in review writes, locally verified on Forgejo 15.0.9
+with a regular service account and a `write:repository` PAT. Automatic merge,
+approvals and protection bypass are unavailable. Other hosting write adapters
+are not implemented. [Write contracts and recovery](write.md) describe setup,
+permissions, cancellation and durable effects.
+
+Before a production write, verify the deployed Git/API network path, actual
+instance Swagger/version and PAT permissions on a separate synthetic repository.
+Then complete your MCP client's prepare/submit/review/merge/read flow. Preserve
+both mounts through recreation. Local integration tests do not certify your
+instance, branch rules, ChatGPT connection or tunnel boundary.

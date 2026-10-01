@@ -69,7 +69,10 @@ def make_auth(settings: Settings):
 
 def principal(settings: Settings) -> Principal:
     if settings.deployment_mode == "tunnel":
-        return Principal(subject="tunnel_operator")
+        return Principal(
+            subject="tunnel_operator",
+            roles=frozenset({"reader", "writer"} if settings.write_enabled else {"reader"}),
+        )
     token = get_access_token()
     if (
         token is None
@@ -79,7 +82,14 @@ def principal(settings: Settings) -> Principal:
         raise DomainError(
             "PERMISSION_DENIED", "The current identity is not permitted to access this vault"
         )
-    return Principal(subject="github:" + str(token.claims["sub"]))
+    return Principal(
+        subject="github:" + str(token.claims["sub"]),
+        roles=frozenset(
+            {"reader", "writer"}
+            if settings.write_enabled and str(token.claims["sub"]) in settings.write_user_ids
+            else {"reader"}
+        ),
+    )
 
 
 class AuthorizeRequests(Middleware):

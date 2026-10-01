@@ -1,11 +1,12 @@
-# Obsidian Read MCP
+# Markdown Vault MCP
 
 A self-hosted Python/FastMCP server for a single Git-backed Markdown vault.
 Search, list, read, outline and backlinks use immutable commit snapshots and
 SQLite FTS5. No running Obsidian, embedding service or external AI API is needed.
 
-The current version supports read only. Your notes can be stored in a GitHub,
-GitLab or Forgejo repository. Obsidian does not need to run on the server.
+Version 0.2.0 adds durable writes through Forgejo pull requests for review.
+Read works with GitHub, GitLab and Forgejo repositories. Write is opt-in;
+automatic merge is disabled. Obsidian does not need to run on the server.
 
 ## Installation
 
@@ -59,7 +60,7 @@ the search index and persistent application state in `data/`.
 Edit these settings in `.env` for either variant:
 
 ```dotenv
-IMAGE=ghcr.io/fabiancz/markdown-mcp:sha-0dbe59cbae24
+IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.0
 GIT_PROVIDER=forgejo
 GIT_REPO_URL=https://forge.example/owner/vault.git
 GIT_USERNAME=your-service-account
@@ -71,7 +72,7 @@ GIT_TARGET_BRANCH=
 - Use the repository's HTTPS clone URL without credentials embedded in it.
 - Provide an account and PAT with read access to that repository.
 - Leave `GIT_TARGET_BRANCH` empty to use the repository's default branch.
-- Keep `WRITE_ENABLED=false`, `WRITE_DEFAULT_MODE=review` and `YOLO_ENABLED=false`.
+- Keep write disabled for read-only use. To enable Forgejo review, follow the write section below.
 
 For a Git server on a trusted private network without HTTPS, you can explicitly
 enable HTTP:
@@ -84,8 +85,11 @@ GIT_ALLOW_HTTP=true
 The host and port must be reachable from the container. HTTP sends credentials
 and note content unencrypted. SSH repository URLs are currently unsupported.
 
-The image above is a published commit image with HTTP support. The examples use
-`:latest`, which is created by stable release publication; pushes to `main`
+Use the 0.2.0 image after its publishing workflow has completed successfully.
+It includes Forgejo review writes and HTTP transport support. Earlier read
+images do not include the write tools. For local testing, build this checkout.
+
+The examples use `:latest`, which is created by stable release publication; pushes to `main`
 publish `sha-...` tags. Choose an existing tag from
 [container packages](https://github.com/fabiancz/markdown-mcp/pkgs/container/markdown-mcp)
 and see [release instructions](https://github.com/fabiancz/markdown-mcp/blob/main/docs/releases.md)
@@ -174,7 +178,8 @@ tunnel permissions. Other supported OpenAI clients use their tunnel connection
 settings. See the [OpenAI Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
 
 This profile needs no additional GitHub OAuth sign-in. Everyone allowed to use
-the tunnel receives the same read access to the configured vault. Keep the MCP
+the tunnel receives the same access to the configured vault, including write
+when `WRITE_ENABLED=true`. Keep the MCP
 port private, as in the supplied Compose file. Deployment verification status is
 documented in [verification evidence](https://github.com/fabiancz/markdown-mcp/blob/main/docs/verification.md).
 
@@ -192,6 +197,31 @@ A typical workflow is:
 Fulltext handles Czech accents, words and quoted phrases. Use `literal` for
 commands, URLs or punctuation, and `filename` for paths, titles and aliases.
 Stemming and semantic similarity are not included.
+
+For Forgejo review writes, use a service account with repository access and a
+PAT scoped to `write:repository`. Enable:
+
+```dotenv
+WRITE_ENABLED=true
+WRITE_DEFAULT_MODE=review
+YOLO_ENABLED=false
+```
+
+In OAuth mode also set `GITHUB_WRITE_USER_IDS` to the permitted subset of
+`GITHUB_ALLOWED_USER_IDS`. The tunnel profile uses one shared `tunnel_operator`.
+
+1. Read/search to obtain `snapshot_id` and each existing note's `revision`.
+2. Call `prepare_change` with create/replace/delete/rename operations, a summary,
+   a unique idempotency key and `base_snapshot_id`. Inspect the returned diff/hash.
+3. Call `submit_change(change_id=..., expected_diff_hash=..., mode="review")`.
+4. Follow `cr_url` for review and manual merge; poll `get_change` for progress.
+   Read sees the proposal only after merge into the configured target.
+
+Accepted, PR-open, merged and visible-in-read are separate facts. Restart/retry
+reconciles existing effects; it does not create a second PR or overwrite foreign
+branch changes. `cancel_change` stops further publication and leaves any existing
+PR/branch on Forgejo. It does not close a PR or undo a merge. See the complete
+[write workflow](docs/write.md), including limits and recovery.
 
 For updates, pull your chosen image and recreate the services with
 `docker compose pull` and `docker compose up -d`. Preserve `repo/`, `data/` and
@@ -214,6 +244,7 @@ uv run ruff format --check .
 uv run pytest
 uv build
 uv run python scripts/evaluate.py
+uv run python scripts/forgejo_smoke.py
 docker build -t ghcr.io/fabiancz/markdown-mcp:latest .
 uv run python scripts/container_smoke.py --platform linux/arm64
 uv run python scripts/container_smoke.py --platform linux/arm64 --git-http

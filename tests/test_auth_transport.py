@@ -65,7 +65,8 @@ def test_missing_auth_fails_closed_and_configuration(vault):
     for update in [
         {"deployment_mode": "oauth"},
         {"git_repo_url": "https://user:token@example.com/a/b"},
-        {"write_enabled": True},
+        {"write_enabled": True, "git_provider": "github"},
+        {"yolo_enabled": True},
         {"git_target_branch": "--evil"},
         {"git_pat_file": settings.data_root / "missing"},
     ]:

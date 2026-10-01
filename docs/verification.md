@@ -1,8 +1,9 @@
 # Verification evidence — 2026-09-30
 
-This is a locally verified M1 implementation candidate. Production M1 is pending
-actual ChatGPT and deployment acceptance. No production credentials, private vault,
-forge write operation or public image publication was used.
+Version 0.2.0 is a locally verified M2 implementation candidate. P0-P2 below are
+historical read evidence; P3/P4 now add real disposable Forgejo review tests.
+Production deployment and ChatGPT/tunnel acceptance remain pending. No production
+credentials/private vault or publication of the 0.2.0 candidate was used.
 
 ## P0
 
@@ -108,3 +109,44 @@ A public versioned registry image and license are also pending; the selected
 namespace is `ghcr.io/fabiancz/markdown-mcp`.
 The experimental tunnel example must not be advertised as a verified supported
 installation until P0-T passes. See [deployment acceptance steps](deployment.md).
+
+## P3/P4 — durable Forgejo review, 0.2.0
+
+- `uv sync --locked`, Ruff lint/format and `uv build` passed.
+- Standard suite: **59 passed, 3 opt-in live tests skipped**. Upstream HTTPX
+  deprecation warnings remain visible.
+- Actual bare-Git tests cover atomic operations, revisions, path safety, dirty
+  service checkout, private staging, target advancement, foreign branch/worktree
+  preservation, concurrent reservation and crashes after commit/push/PR effects.
+- Durable retry reconciles unknown remote effects, including after cancellation
+  or revocation. CAS tests cover cancellation during POST. Post-merge index failure
+  preserves truthful merge acceptance and retries only synchronization.
+- Hooks and repository-defined content filters never run, including a clean
+  filter normally triggered by `git status`. No-op drafts produce no publication.
+- Provider contract tests use a subset of real Forgejo 15.0.9 Swagger. They cover
+  capped pagination, closed/merged discovery, duplicate prevention, branch/repo/
+  marker identity, unavailable/error mapping, credential redaction and redirects.
+- `uv run python scripts/forgejo_smoke.py --application-image markdown-mcp:m2-arm64
+  --platform linux/arm64` passed all **3 live tests**, repeated successfully for
+  `markdown-mcp:m2-amd64` and `linux/amd64` (local emulation).
+- The script uses official Forgejo **15.0.9+gitea-1.22.0**, digest
+  `sha256:91a5310c86934339e16bd06b6078aada836e3d8935b2d70f6598108cbfaed5d1`,
+  a regular non-admin fixture owner and a product PAT scoped to `write:repository`.
+  Fixture repository creation/deletion uses the synthetic account's separate
+  fixture setup credentials. No repository/PR creation rights beyond the intended
+  product workflow are silently assumed for deployment.
+- Live tests exercise Git publication, real PR creation followed by an injected
+  timeout, restart/reconciliation to one PR, manual PR metadata/branch updates,
+  manual squash merge and read visibility of both atomically proposed notes;
+  manual close/cancel and wrong PAT. Merge is performed by the test reviewer,
+  never the product adapter. HTTP tools in both built MCP images preserve the
+  same proposal/PR after container recreation and do not index an open PR.
+- Both Linux image builds passed. Compose smoke passed on both architectures
+  with HTTPS and opt-in HTTP Git: search/read/recreation in the tunnel profile,
+  OAuth discovery/S256 and unauthenticated 401 in the OAuth profile.
+
+The repeatable commands and precise limitations are in [write.md](write.md).
+Only review is supported. Automatic merge/approvals/head-precondition capability
+remain unverified/disabled. Other Forgejo versions, production connectivity/PAT/
+branch protections and actual ChatGPT/tunnel acceptance require operator tests.
+No commit, push, registry publication or deployment was performed by this work.

@@ -12,6 +12,9 @@ Use Python 3.12 and uv with the committed lockfile. Run:
 - `uv run ruff format --check .`
 - `uv run pytest`
 - `uv build`
+- `uv run python scripts/forgejo_smoke.py` for write/provider changes (Docker required)
+- Add `--application-image IMAGE --platform linux/ARCH` to that smoke command
+  when changing the write runtime; it verifies HTTP tools and container recreation.
 - `uv run python scripts/evaluate.py` when changing search ranking or parsing
 - `docker build -t ghcr.io/fabiancz/markdown-mcp:latest .` for runtime/container changes
 - `actionlint .github/workflows/build.yml` for workflow changes
@@ -32,3 +35,11 @@ keys must survive restarts. Index rebuild must preserve all other state.
 
 Check the repository root before Git operations. Do not automatically commit or
 publish. Record verification evidence and external limitations honestly.
+
+Write is Forgejo review only. Keep prepared payloads/diffs immutable. Persist an
+intent before commit/push/PR creation; reconcile unknown outcomes before retry,
+including after cancellation or revocation. Never push a target or overwrite an
+existing foreign branch. Keep merge acceptance and index visibility separate.
+Live fixtures must use disposable loopback repositories with synthetic content;
+never test writes against a production vault. Git plumbing bypasses filters,
+hooks and merge drivers; even status must disable configured content filters.

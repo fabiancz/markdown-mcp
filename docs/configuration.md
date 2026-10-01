@@ -19,10 +19,10 @@ Application configuration reads the process environment, not an automatic local
 | `GIT_TARGET_BRANCH` | Empty discovers/persists the remote default branch; explicit branch takes precedence |
 | `GIT_USERNAME`, `GIT_PAT` | Required service-account HTTPS credentials; M1 requires repository read access only |
 | `GIT_PAT_FILE` | Optional mounted secret file; conflicts with a nonempty `GIT_PAT` |
-| `GIT_CA_BUNDLE` | Optional mounted CA certificate bundle; TLS verification cannot be disabled |
+| `GIT_CA_BUNDLE` | Optional mounted CA certificate bundle for Git and Forgejo API; TLS verification cannot be disabled |
 | `FORGE_REPO_ID` | Optional owner/repo or GitLab namespace/subgroup/project override |
 | `FORGE_API_URL` | Optional HTTPS API root (HTTP requires `GIT_ALLOW_HTTP=true`), required for ambiguous subpath hosting |
-| `GIT_COMMIT_NAME`, `GIT_COMMIT_EMAIL` | Reserved future write metadata, defaults Vault MCP Bot / vault-mcp@example.invalid |
+| `GIT_COMMIT_NAME`, `GIT_COMMIT_EMAIL` | Service commit metadata, defaults Vault MCP Bot / vault-mcp@example.invalid |
 | `GIT_TIMEOUT_SECONDS` | 15 seconds per Git command |
 | `SYNC_BEFORE_READ` | true; explicit snapshot/cursor skips synchronization |
 | `SYNC_MIN_INTERVAL_SECONDS` | 0; positive values permit deliberate freshness caching |
@@ -38,13 +38,18 @@ Application configuration reads the process environment, not an automatic local
 | `MAX_INDEX_BYTES` | 256 MiB raw selected Markdown per generation; at most 100,000 eligible notes |
 | `SNAPSHOT_RETENTION_SECONDS` | 900 seconds for prior generations |
 | `SNAPSHOT_MAX_BYTES` | 1 GiB retained serialized document budget; active generation must fit; older snapshots may expire early |
-| `WRITE_ENABLED`, `WRITE_DEFAULT_MODE`, `YOLO_ENABLED` | Must remain false/review/false; enabling write is rejected in 0.1.1 |
+| `WRITE_ENABLED` | false; opt-in Forgejo review writes; other write providers are rejected |
+| `WRITE_DEFAULT_MODE`, `YOLO_ENABLED` | Must remain review/false; automatic merge is unavailable |
+| `GITHUB_WRITE_USER_IDS` | Empty by default; OAuth writer IDs must be a subset of the read allowlist |
+| `WRITE_MAX_OPERATIONS`, `WRITE_MAX_BYTES` | 50 operations and 1 MiB normalized request/diff; preview must also fit `MAX_RESPONSE_BYTES` |
+| `WRITE_POLL_SECONDS` | 10 seconds between background status checks; retries back off to 300 seconds |
+| `FORGE_TIMEOUT_SECONDS` | 15 seconds per HTTP operation |
 | `TUNNEL_IMAGE` | Compose-only official image pinned by digest in the example |
 | `OPENAI_TUNNEL_ID`, `OPENAI_TUNNEL_API_KEY` | Compose-only tunnel credentials, passed only to the tunnel service |
 
 For GitHub, the default API root is api.github.com or enterprise `/api/v3`; for
-GitLab `/api/v4`; for Forgejo `/api/v1`. M1 does not call forge APIs or verify CR
-capabilities. Complex subpath installations should supply explicit API/repository
+GitLab `/api/v4`; for Forgejo `/api/v1`. Read-only installations do not call forge APIs. Forgejo write verifies the
+repository and review Swagger contract before publishing. Complex subpath installations should supply explicit API/repository
 IDs; automatic owner/repo recognition is tested for ordinary URLs. Git credentials
 are never inferred from the OAuth login.
 
