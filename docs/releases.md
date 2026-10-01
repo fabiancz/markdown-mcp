@@ -85,3 +85,13 @@ restricted to the selected vault repository. Existing state/mounts are reused
 without a schema migration. Write-enabled MCP advertises sixteen tools, and its
 installed version reports 0.2.2. Tag and image publication remain separate actions;
 do not pull the 0.2.2 registry tag before its publishing workflow succeeds.
+
+## 0.2.3
+
+Advertises the bundled blue crystal icon in MCP initialization through
+`serverInfo.icons`. The transparent 128×128 PNG is embedded as a data URI, so
+both OAuth and tunnel profiles work without separate asset hosting or new
+configuration. Refresh the client connection after upgrading. Icon rendering
+depends on the client and has not been verified in ChatGPT. Existing mounts and
+state are reused without a migration. Pull 0.2.3 only after its publishing
+workflow succeeds.

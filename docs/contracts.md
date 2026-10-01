@@ -33,6 +33,12 @@ Since 0.2.1, `ping.data` includes `status`, deployment `mode`, application `vers
 reports the same installed package version in `serverInfo.version`; it is separate
 from the response `schema_version` and MCP protocol version.
 
+MCP initialization also advertises the bundled blue crystal icon through
+`serverInfo.icons`: a 128×128 PNG with transparency, embedded as a Base64 `data:`
+URI. No public asset URL or additional network request is needed, including in
+the tunnel profile. Rendering depends on the client; displaying this icon in
+ChatGPT has not been verified.
+
 Read tools are read-only/non-destructive; freshness can fetch the configured
 remote and update local cache. When write is enabled or a durable change journal
 exists, review tools are also registered; their contracts are in [write.md](write.md).

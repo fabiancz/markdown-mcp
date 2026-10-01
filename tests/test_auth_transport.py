@@ -3,6 +3,7 @@ import hashlib
 import re
 import tomllib
 from importlib.metadata import version
+from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -41,6 +42,14 @@ async def test_mcp_release_version_and_write_discovery(vault, write_enabled):
     server = create_server(settings, Reader(settings, source))
     async with Client(server) as client:
         assert client.initialize_result.serverInfo.version == release_version
+        icons = client.initialize_result.serverInfo.icons
+        assert icons and len(icons) == 1
+        assert icons[0].mimeType == "image/png" and icons[0].sizes == ["128x128"]
+        prefix, encoded = icons[0].src.split(",", 1)
+        assert prefix == "data:image/png;base64"
+        assert base64.b64decode(encoded, validate=True) == (
+            files("obsidian_mcp").joinpath("assets/icon.png").read_bytes()
+        )
         fetches = source.fetch_count
         ping = (await client.call_tool("ping", {})).data["data"]
         assert ping == {

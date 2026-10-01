@@ -122,6 +122,11 @@ The MCP initialization `serverInfo.version` uses the installed package version,
 which matches the release tag. Plugin information displayed by ChatGPT may have
 separate metadata; use the MCP response to verify the running application.
 
+The server advertises its bundled blue crystal icon in `serverInfo.icons` as an
+embedded PNG, with no additional configuration or public asset hosting. After
+upgrading, refresh the client connection to retrieve the metadata. Whether
+ChatGPT uses this icon in its interface still requires a live client check.
+
 To rebuild only the derived index: stop MCP, move `data/index.sqlite` and any
 `index.sqlite-wal`/`index.sqlite-shm` aside, then start MCP. Keep `data/source.json`,
 `data/auth/`, `data/state.sqlite` and all repo

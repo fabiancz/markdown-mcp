@@ -4,10 +4,13 @@ import asyncio
 import json
 import logging
 import sqlite3
+from base64 import b64encode
 from contextlib import asynccontextmanager
+from importlib.resources import files
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import Icon
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -43,6 +46,16 @@ def create_server(settings: Settings, reader: Reader | None = None) -> FastMCP:
     mcp = FastMCP(
         "Markdown Vault MCP",
         version=__version__,
+        icons=[
+            Icon(
+                src="data:image/png;base64,"
+                + b64encode(files("obsidian_mcp").joinpath("assets/icon.png").read_bytes()).decode(
+                    "ascii"
+                ),
+                mimeType="image/png",
+                sizes=["128x128"],
+            )
+        ],
         auth=make_auth(settings),
         lifespan=lifespan,
         instructions=(
