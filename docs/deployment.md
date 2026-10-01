@@ -113,7 +113,8 @@ After changing tools or configuration, refresh the connection in ChatGPT Plugins
 and start a new conversation, as described in
 [OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
 A fresh read-only installation advertises seven tools; enabling Forgejo review
-writes adds five tools, for twelve total. Persisted write state also keeps those
+writes adds nine tools in 0.2.2, for sixteen total (twelve in 0.2.0/0.2.1).
+Persisted write state also keeps those
 tools registered for observation after disabling writes; mutations still enforce
 the current policy. Use authenticated `ping` to check the running application's
 `version`, `write_enabled` and `write_default_mode` (available since 0.2.1).
@@ -137,8 +138,12 @@ calling this a public production release.
 
 ## Forgejo review acceptance
 
-Version 0.2.0 supports opt-in review writes, locally verified on Forgejo 15.0.9
-with a regular service account and a `write:repository` PAT. Automatic merge,
+Version 0.2.2 extends opt-in review writes with feedback reads and approved
+commits to the same PR, locally verified on Forgejo 15.0.9. Use a regular service
+account with repository write access and a PAT scoped to `write:repository` plus
+`read:issue` for discussion reads. Add that scope when upgrading from 0.2.1 and
+recreate the MCP service with the updated token. No new environment variable or
+state migration is needed; preserve the existing mounts. Automatic merge,
 approvals and protection bypass are unavailable. Other hosting write adapters
 are not implemented. [Write contracts and recovery](write.md) describe setup,
 permissions, cancellation and durable effects.

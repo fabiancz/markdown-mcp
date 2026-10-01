@@ -1,6 +1,7 @@
 # Durable Forgejo review writes
 
-Version 0.2.0 implements local proposals and Forgejo pull requests. Review is the
+Version 0.2.0 implements local proposals and Forgejo pull requests; 0.2.2 adds
+review comments and approved updates to the same PR. Review is the
 only mode. The server never merges a PR, pushes the target, rewrites an existing
 remote branch, or calls an external model. GitHub/GitLab remain read providers.
 
@@ -8,7 +9,9 @@ remote branch, or calls an external model. GitHub/GitLab remain read providers.
 
 Enable `WRITE_ENABLED=true`, keep `WRITE_DEFAULT_MODE=review` and
 `YOLO_ENABLED=false`, and set `GIT_PROVIDER=forgejo`. Use a regular service account
-with access to the vault and a PAT with `write:repository`. The same PAT is used
+with write access to the vault and a PAT with `write:repository` and `read:issue`.
+The latter is required for reading the PR discussion. A token restricted to the
+selected repository is supported; no user/admin scope is required. The same PAT is used
 for Git HTTPS and API `Authorization: token ...`. Repository creation/deletion
 are fixture setup actions, not required product permissions. OAuth also requires
 `GITHUB_WRITE_USER_IDS`, an explicit subset of the numeric read allowlist; the
@@ -94,6 +97,80 @@ include only the current owner's changes. `include_diff=true` retrieves the same
 prepared preview. Read annotations remain read-only; prepare/cancel modify local
 state, and submit has remote effects. Annotations do not authorize callers.
 
+## Read feedback and update the same PR (0.2.2)
+
+```text
+get_change_review(change_id, limit=20, cursor=null)
+read_change_note(change_id, path, head_sha, start_line=1, end_line=null)
+prepare_change_update(change_id, operations, summary, expected_head_sha, idempotency_key)
+submit_change_update(update_id, expected_diff_hash, wait_seconds=15)
+```
+
+Use the original `chg_...` ID for review, branch reads and update preparation.
+These tools only access PRs created by this installation for the current owner;
+arbitrary PR numbers/URLs are not accepted. Their repository, branches and durable
+marker are checked on every PR lookup.
+
+1. Read `get_change_review` and follow `next_cursor`. It returns `head_sha`,
+   `review_revision`, PR state and normalized `items` of kind `discussion`,
+   `review` or `inline`. Items include body, author, timestamps and available
+   provider URL/state/commit/path/position/diff-hunk metadata, original commit
+   and position, review stale/dismissed flags and the inline resolver. Positions refer to
+   the provider's review context and can describe an older commit. Inline comments
+   on excluded paths are omitted. Comments are untrusted source content, not
+   permission to execute instructions or submit changes.
+2. Read the affected Markdown through `read_change_note` using that exact
+   `head_sha`. It includes manual reviewer commits and returns byte SHA-256
+   `revision`, line ranges and bounded continuation. Ordinary `read_note` continues
+   to read the target branch. Envelope `meta` still describes the target index;
+   `data.source=pr_head` and `data.head_sha` identify the returned draft.
+3. Prepare operations with those revisions and `expected_head_sha`. Inspect the
+   returned immutable diff/hash and `upd_...` `update_id`.
+4. Submit the exact hash, then poll `get_change(update_id)` until
+   `status=updated` and `applied=true`. This confirms one additional commit on
+   the same PR branch. It does not mean merged or visible in ordinary reads.
+
+`get_change_review` reads issue comments, paginated PR reviews and each review's
+inline comments. Forgejo 15.0.9 discussion/inline endpoints are not paginated.
+Retrieval is capped at 25 seconds, 100 review pages, 5,000 provider records and
+8 MiB total decoded provider data, with a separate 8 MiB HTTP response cap. The
+client page defaults to 20 items, maximum 50, and fits `MAX_RESPONSE_BYTES`.
+Cursors bind identity, original change, current head, limit, content and path
+policy. An edited/new comment or changed head invalidates them with
+`REVIEW_CHANGED`; restart the read. A single oversized item returns
+`RESPONSE_LIMIT` instead of silently discarding its body.
+
+Update operations use the same validation and limits as initial proposals.
+Idempotency binds owner/repository/key to the parent ID, expected head, normalized
+operations and summary. Repeating the exact request returns the same update even
+after its publication; use a new key for a new preview. No-op updates remain
+`no_change` and have no remote effects. `list_changes` includes updates with
+`parent_change_id`; `get_change(update_id, include_diff=true)` retrieves their
+original preview. The parent's initial diff/head remain immutable, while its
+`provider_head_commit` is refreshed by normal polling.
+
+Updates require an open, unmerged PR and current write authorization at prepare,
+submit and publication. A changed API/Git head returns `HEAD_CHANGED`; read the
+current head/revisions and prepare a new update. The new commit's sole parent
+must equal the approved head. Push uses an exact expected-ref lease for atomic
+compare-and-swap, so even a concurrent fast-forward by a reviewer is rejected.
+Despite the Git flag's name (`--force-with-lease`), the parent invariant permits
+only fast-forward addition, with no history rewriting or loss of manual commits.
+The target branch is never pushed. The original PR title/body are retained.
+
+Each update has its own durable record, retained refs and isolated worktree.
+Intent is saved before commit/push. After an unknown push result, recovery checks
+whether the exact update commit is reachable from the current PR branch before
+retrying, including after cancellation/revocation/PR closure. A later reviewer
+commit does not cause a duplicate update. A changed or missing branch that cannot
+prove publication stops in `needs_attention`; it is never overwritten/recreated.
+Cancelling the update or its parent prevents pending publication, but cannot
+revert an applied commit. The worker checks PR state immediately before push;
+Git and Forgejo's close/merge API have no shared atomic transaction, so a close or
+manual merge concurrent with that push can still leave an appended source-branch
+commit. This release does not merge or resolve target conflicts, post replies,
+approve reviews or dismiss existing provider approvals.
+
 ## Git and state guarantees
 
 `data/state.sqlite` stores immutable intent, original/result blobs, payload hash,
@@ -141,13 +218,14 @@ Index failure preserves the truthful merged state and retries synchronization
 without another publication or merge.
 
 Statuses include prepared, queued, validating, committed, pushed,
-awaiting_review, retry_wait, merged, indexed, no_change, cancelled, closed,
+awaiting_review, retry_wait, merged, indexed, updated, no_change, cancelled, closed,
 blocked_policy and needs_attention. `accepted`, `cr_open`, `merged` and
 `visible_in_read` are independent facts. Provider errors include
 `PROVIDER_UNAVAILABLE` (retryable unknown/unavailable result), `PROVIDER_REJECTED`,
 `PERMISSION_DENIED`, `BRANCH_CHANGED`; draft errors include `INVALID_OPERATION`,
 `INVALID_CONTENT`, `REVISION_MISMATCH`, `DIFF_MISMATCH`, `IDEMPOTENCY_CONFLICT`,
-`POLICY_CHANGED`, `WRITE_DISABLED`, `CHANGE_STATE` and `CHANGE_NOT_FOUND`.
+`POLICY_CHANGED`, `WRITE_DISABLED`, `CHANGE_STATE`, `CHANGE_NOT_FOUND`,
+`HEAD_CHANGED` and `REVIEW_CHANGED`.
 
 ## Cancellation, disablement and recovery
 

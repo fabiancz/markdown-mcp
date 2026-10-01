@@ -138,3 +138,53 @@ async def test_foreign_or_ambiguous_pr_never_creates_duplicate(vault, update):
     with pytest.raises(DomainError) as error:
         await adapter.create_or_find_cr(c)
     assert error.value.code == "BRANCH_CHANGED" and not posts
+
+
+async def test_review_comment_kinds_server_capped_pagination_and_auth(vault):
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        assert request.method == "GET" and request.headers["Authorization"] == "token test-only"
+        path = request.url.path
+        if path.endswith("/issues/1/comments"):
+            rows = [
+                {"id": 1, "body": "Discussion", "user": {"id": 42, "login": "reviewer"}},
+                {"id": 2, "body": "More discussion"},
+            ]
+        elif path.endswith("/reviews/3/comments"):
+            rows = [
+                {
+                    "id": 4,
+                    "body": "Inline feedback",
+                    "path": "Note.md",
+                    "position": 2,
+                    "original_position": 1,
+                    "original_commit_id": "a" * 40,
+                    "resolver": {"id": 42, "login": "reviewer"},
+                }
+            ]
+        else:
+            rows = [
+                {
+                    "id": 3,
+                    "body": "Review feedback",
+                    "state": "REQUEST_CHANGES",
+                    "commit_id": "c" * 40,
+                }
+            ]
+            page = int(request.url.params["page"])
+            return httpx.Response(200, json=rows[page - 1 : page])
+        assert not request.url.params
+        return httpx.Response(200, json=rows)
+
+    adapter = ForgejoAdapter(vault[0], httpx.MockTransport(handler))
+    adapter.evidence = {"repository_id": 9, "review_comments_verified": True}
+    items = await adapter.review_comments(1)
+    assert {item["kind"] for item in items} == {"discussion", "review", "inline"}
+    assert len(items) == 4 and items[0]["author"]["login"] == "reviewer"
+    inline = next(item for item in items if item["kind"] == "inline")
+    assert inline["line"] == 2 and inline["original_line"] == 1
+    assert inline["original_commit_sha"] == "a" * 40
+    assert inline["resolver"]["login"] == "reviewer"
+    assert "/api/v1/repos/owner/vault/pulls/1/reviews/3/comments" in calls

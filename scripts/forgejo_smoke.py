@@ -89,6 +89,24 @@ def main():
             "fixture@example.invalid",
             "--must-change-password=false",
         )
+        run(
+            "docker",
+            "exec",
+            "--user",
+            "git",
+            name,
+            "forgejo",
+            "admin",
+            "user",
+            "create",
+            "--username",
+            "reviewer",
+            "--password",
+            "synthetic-reviewer-password-29",
+            "--email",
+            "reviewer@example.invalid",
+            "--must-change-password=false",
+        )
         env = dict(
             os.environ,
             MCP_TEST_FORGEJO_URL=url,

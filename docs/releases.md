@@ -37,11 +37,11 @@ exact version when you want to pin a deployment.
 From this product checkout, update package metadata and the lockfile together:
 
 ```sh
-uv version --no-sync 0.2.1
+uv version --no-sync 0.2.2
 ```
 
 Review and commit the version change, then push the commit and its tag using your
-normal Git workflow. A tag such as `v0.2.1` starts publication. Alternatively,
+normal Git workflow. A tag such as `v0.2.2` starts publication. Alternatively,
 after pushing the updated version to `main`, run **Verify and publish containers**
 from the Actions page and enter the matching version (or leave the input empty).
 Do not reuse a released version for different code. Source/tag pushes and registry
@@ -55,7 +55,7 @@ access settings, grant this repository Actions access to the package.
 
 The examples use `IMAGE=ghcr.io/fabiancz/markdown-mcp:latest`. To pin a deployment,
 set `.env` to a released reference such as
-`IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.1`, after that version exists.
+`IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.2`, after that version exists.
 Run `docker compose pull` and `docker compose up -d` using the existing mounts.
 License selection and real ChatGPT/tunnel acceptance remain separate release tasks.
 
@@ -71,3 +71,17 @@ version and configured write policy to distinguish deployment configuration from
 cached client tools. Upgrade and ChatGPT metadata refresh steps are documented in
 [deployment](deployment.md). The 0.2.0 image remains unchanged. Pull 0.2.1 only
 after its publishing workflow has completed successfully.
+
+## 0.2.2
+
+Adds discussion, review and inline feedback reads, current PR Markdown reads,
+immutable update previews and durable submission of another commit to the same
+PR. Exact head/revision/hash checks preserve manual reviewer commits and reject
+stale updates. Unknown pushes are reconciled after restart without duplicate
+commits or PRs. See [the review update workflow](write.md#read-feedback-and-update-the-same-pr-022).
+
+Upgrade the Forgejo token to `write:repository` plus `read:issue`; it may remain
+restricted to the selected vault repository. Existing state/mounts are reused
+without a schema migration. Write-enabled MCP advertises sixteen tools, and its
+installed version reports 0.2.2. Tag and image publication remain separate actions;
+do not pull the 0.2.2 registry tag before its publishing workflow succeeds.

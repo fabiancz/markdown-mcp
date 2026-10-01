@@ -150,3 +150,42 @@ Only review is supported. Automatic merge/approvals/head-precondition capability
 remain unverified/disabled. Other Forgejo versions, production connectivity/PAT/
 branch protections and actual ChatGPT/tunnel acceptance require operator tests.
 No commit, push, registry publication or deployment was performed by this work.
+
+## Review feedback and same-PR updates — 0.2.2 (2026-10-01)
+
+- Locked dependency sync, Ruff lint/format and wheel/sdist build passed. Standard
+  suite: **72 passed, 4 opt-in live tests skipped**; upstream Starlette/Authlib
+  deprecation warnings remain visible.
+- Bare-Git tests cover multiple sequential updates of the same PR, immutable
+  original previews, exact hashes/revisions, idempotency/no-op updates, current
+  branch reads and preservation of manual reviewer commits. A real competing
+  push injected after the last head check is rejected by the exact Git lease.
+- Queued updates stop on closed/merged PRs or parent cancellation. Unknown pushes
+  are reconciled after restart and cancellation/write revocation without replay.
+  Parallel prepared updates cannot overwrite each other. Owner/path restrictions,
+  changed review cursors and preview response limits are exercised.
+- Live fixtures use Forgejo **15.0.9+gitea-1.22.0**, a regular owner and separate
+  reviewer on private synthetic repositories. The product PAT is restricted to
+  one repository with `write:repository` and `read:issue`; fixture setup/cleanup
+  use separate synthetic Basic credentials.
+- Live tests read discussion/review/inline feedback, preserve provider commit and
+  position context, reject stale updates, preserve manual commits, recover after
+  a real push followed by an injected timeout, and index a manual squash merge.
+  The fixture waits for Forgejo's asynchronous mergeability computation; the
+  product never merges. Discussion and inline endpoints return one collection,
+  while the review list paginates. New inline comments can have empty original
+  commit metadata; the adapter preserves the provider value.
+- Local Linux arm64 and emulated amd64 images build successfully. Compose smoke
+  passes for HTTPS and opt-in HTTP Git on both architectures, including tunnel
+  read/recreation and OAuth discovery/S256/unauthenticated 401.
+- `uv run python scripts/forgejo_smoke.py --application-image
+  markdown-mcp:test-0.2.2-arm64 --platform linux/arm64` passes all **4 live tests**;
+  the corresponding amd64 command also passes all **4**. HTTP MCP tools read PR
+  context, prepare/submit an update, and preserve its same PR/head after another
+  container recreation.
+
+See [write.md](write.md) for the new tool sequence, token scope and concurrency
+limits. These are local synthetic tests, not acceptance of an operator's actual
+Forgejo/ChatGPT/tunnel installation. The checks above were completed before the
+release commit/tag and registry publication. Pull the versioned image only after
+its publishing workflow succeeds. No production deployment was performed.

@@ -18,9 +18,10 @@ from .git_workspace import DraftWorkspace, canonical_operations
 from .models import ChangeStatus, DomainError, Principal
 from .read import Reader
 from .repo_lock import file_lock
+from .review import ReviewWorkflow
 
 
-class Writer:
+class Writer(ReviewWorkflow):
     def __init__(self, settings: Settings, reader: Reader, adapter=None):
         self.settings, self.reader = settings, reader
         if not isinstance(reader.source, ManagedGit):
@@ -85,6 +86,7 @@ class Writer:
             "updated_at",
             "forge_evidence",
             "cancel_requested",
+            "parent_change_id",
         ]
         result = {k: change.get(k) for k in fields}
         result.update(
@@ -95,6 +97,9 @@ class Writer:
         )
         if diff:
             result["diff"] = change["diff"]
+        if change.get("parent_change_id"):
+            result["update_id"] = change["change_id"]
+            result["applied"] = change["status"] == "updated"
         return result
 
     async def prepare_change(
@@ -108,6 +113,21 @@ class Writer:
     ) -> dict:
         actor = self.actor(actor)
         self.authorize(actor)
+        normalized, summary, request_hash = self.normalize_request(
+            operations, summary, idempotency_key, base_snapshot_id
+        )
+        existing = await asyncio.to_thread(self.store.find, actor.subject, idempotency_key)
+        if existing:
+            if existing["request_hash"] != request_hash:
+                raise DomainError("IDEMPOTENCY_CONFLICT", "Key already belongs to another request")
+            return self.envelope(existing, diff=True)
+        base = await self.reader.snapshot(base_snapshot_id)
+        change = await asyncio.to_thread(
+            self._prepare, actor, normalized, summary, idempotency_key, request_hash, base
+        )
+        return self.envelope(change, diff=True)
+
+    def normalize_request(self, operations, summary, idempotency_key, base_identity):
         normalized = canonical_operations(operations)
         if not 1 <= len(normalized) <= self.settings.write_max_operations:
             raise DomainError("INVALID_LIMIT", "Operation count exceeds the write limit")
@@ -120,20 +140,11 @@ class Writer:
             raise DomainError("INVALID_OPERATION", "Summary must be a single bounded line")
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", idempotency_key):
             raise DomainError("INVALID_OPERATION", "Use a 1-128 character ASCII idempotency key")
-        payload = json.dumps([normalized, summary, base_snapshot_id], sort_keys=True)
+        payload = json.dumps([normalized, summary, base_identity], sort_keys=True)
         if len(payload.encode()) > self.settings.write_max_bytes:
             raise DomainError("RESPONSE_LIMIT", "Request exceeds the write byte limit")
         request_hash = hashlib.sha256(payload.encode()).hexdigest()
-        existing = await asyncio.to_thread(self.store.find, actor.subject, idempotency_key)
-        if existing:
-            if existing["request_hash"] != request_hash:
-                raise DomainError("IDEMPOTENCY_CONFLICT", "Key already belongs to another request")
-            return self.envelope(existing, diff=True)
-        base = await self.reader.snapshot(base_snapshot_id)
-        change = await asyncio.to_thread(
-            self._prepare, actor, normalized, summary, idempotency_key, request_hash, base
-        )
-        return self.envelope(change, diff=True)
+        return normalized, summary, request_hash
 
     def _prepare(self, actor, operations, summary, key, request_hash, base):
         with self.source.lock():
@@ -304,7 +315,12 @@ class Writer:
         self.authorize(actor)
         for _ in range(5):
             change = await asyncio.to_thread(self.store.get, change_id, actor.subject)
-            if change.get("merged") or change["status"] in {"indexed", "no_change", "closed"}:
+            if change.get("merged") or change["status"] in {
+                "indexed",
+                "no_change",
+                "closed",
+                "updated",
+            }:
                 return self.envelope(change)
             change["cancel_requested"] = True
             if not change["push_intent"] or change["cr_number"]:
@@ -350,15 +366,27 @@ class Writer:
                 if (
                     not change["submitted"]
                     or change["status"]
-                    in {"indexed", "closed", "failed", "needs_attention", "blocked_policy"}
+                    in {
+                        "indexed",
+                        "closed",
+                        "failed",
+                        "needs_attention",
+                        "blocked_policy",
+                        "updated",
+                    }
                     or (change["status"] == "cancelled" and not change["cr_number"])
+                    or (
+                        change.get("parent_change_id")
+                        and change["status"] == "cancelled"
+                        and not change["push_intent"]
+                    )
                     or time.time() < change.get("next_attempt", 0)
                 ):
                     continue
                 try:
                     self._step(change)
                 except DomainError as error:
-                    if error.code == "CHANGE_STATE":
+                    if error.code == "CHANGE_STATE" and error.retryable:
                         continue  # Another request updated the journal; reconcile on the next tick.
                     change.update(code=error.code, message=error.message)
                     if error.retryable:
@@ -384,6 +412,9 @@ class Writer:
                     continue
 
     def _step(self, change: dict):
+        if change.get("parent_change_id"):
+            self._step_update(change)
+            return
         # Observation remains available with WRITE_ENABLED=false. New effects are reauthorized.
         if change["merged"]:
             self._index_merged(change)

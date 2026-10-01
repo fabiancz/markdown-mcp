@@ -241,6 +241,11 @@ class DraftWorkspace:
             .decode()
             .strip()
         )
+        if change.get("parent_change_id"):
+            # Updates retain their own objects and worktree without resetting the original draft.
+            self.run(["update-ref", "refs/mcp-updates/" + change["change_id"], head])
+            self.ensure_worktree(change, head)
+            return head
         ref = self.local_ref(change["branch"])
         if ref and ref != head:
             raise DomainError(
@@ -301,5 +306,29 @@ class DraftWorkspace:
                 "--force-with-lease=refs/heads/" + change["branch"] + ":",
                 "origin",
                 change["head_commit"] + ":refs/heads/" + change["branch"],
+            ]
+        )
+
+    def fetch_branch(self, branch: str) -> str:
+        ref = "refs/mcp-observed/" + hashlib.sha256(branch.encode()).hexdigest()
+        self.run(["fetch", "--no-tags", "origin", "+refs/heads/" + branch + ":" + ref])
+        return self.run(["rev-parse", ref]).decode().strip()
+
+    def publish_update(self, change: dict):
+        expected, head = change["base_commit"], change["head_commit"]
+        parents = self.run(["rev-list", "--parents", "-n", "1", head]).decode().split()
+        if parents != [head, expected]:
+            raise DomainError("DIFF_MISMATCH", "Update must append one commit to its approved head")
+        if self.remote_head(change["branch"]) != expected:
+            raise DomainError("HEAD_CHANGED", "PR head changed; prepare a new update")
+        # An exact lease is an atomic compare-and-swap. The parent check above guarantees
+        # a fast-forward; this cannot drop, rebase or overwrite a reviewer's commit.
+        self.run(
+            [
+                "push",
+                "--porcelain",
+                "--force-with-lease=refs/heads/" + change["branch"] + ":" + expected,
+                "origin",
+                head + ":refs/heads/" + change["branch"],
             ]
         )

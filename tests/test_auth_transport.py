@@ -58,8 +58,12 @@ async def test_mcp_release_version_and_write_discovery(vault, write_enabled):
             "get_change",
             "list_changes",
             "cancel_change",
+            "get_change_review",
+            "read_change_note",
+            "prepare_change_update",
+            "submit_change_update",
         }
-        assert len(names) == (12 if write_enabled else 7)
+        assert len(names) == (16 if write_enabled else 7)
         assert names & write_tools == (write_tools if write_enabled else set())
 
 

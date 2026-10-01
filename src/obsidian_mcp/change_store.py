@@ -96,7 +96,16 @@ class SQLiteChangeStore:
 
     @staticmethod
     def audit(db, change: dict, event: str):
-        fields = ["owner", "paths", "base_commit", "head_commit", "merge_commit", "cr_url", "code"]
+        fields = [
+            "owner",
+            "parent_change_id",
+            "paths",
+            "base_commit",
+            "head_commit",
+            "merge_commit",
+            "cr_url",
+            "code",
+        ]
         db.execute(
             "INSERT INTO change_audit(change_id,at,event,details) VALUES (?,?,?,?)",
             (

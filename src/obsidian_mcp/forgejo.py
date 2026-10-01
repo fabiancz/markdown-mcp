@@ -1,5 +1,6 @@
 """Forgejo review adapter with marker reconciliation and bounded HTTP requests."""
 
+import json
 import ssl
 from urllib.parse import quote, urlsplit
 
@@ -207,3 +208,95 @@ class ForgejoAdapter:
     async def get_cr(self, number: int) -> dict:
         await self.verify()
         return await self.request("GET", self.path + f"/pulls/{number}")
+
+    async def review_comments(self, number: int) -> list[dict]:
+        await self.verify()
+        if not self.evidence.get("review_comments_verified"):
+            schema = await self.request("GET", "/../../swagger.v1.json")
+            required = [
+                "/repos/{owner}/{repo}/issues/{index}/comments",
+                "/repos/{owner}/{repo}/pulls/{index}/reviews",
+                "/repos/{owner}/{repo}/pulls/{index}/reviews/{id}/comments",
+            ]
+            if any("get" not in schema.get("paths", {}).get(path, {}) for path in required):
+                raise DomainError("PROVIDER_REJECTED", "Forgejo review comment API is unsupported")
+            self.evidence["review_comments_verified"] = True
+        total_bytes, total_items = 0, 0
+
+        async def pages(path, *, paginated=False):
+            nonlocal total_bytes, total_items
+            result = []
+            for page in range(1, 101):
+                # Forgejo paginates reviews, but returns discussion and inline
+                # comments in one response (page/limit would be ignored).
+                kwargs = {"params": {"page": page, "limit": 50}} if paginated else {}
+                rows = await self.request("GET", path, **kwargs)
+                if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                    raise DomainError("PROVIDER_UNAVAILABLE", "Invalid review response", True)
+                if not rows:
+                    return result
+                total_bytes += len(json.dumps(rows).encode())
+                total_items += len(rows)
+                if total_bytes > 8 * 1024 * 1024 or total_items > 5000:
+                    raise DomainError("RESPONSE_LIMIT", "Review exceeds the retrieval limit")
+                result.extend(rows)
+                if not paginated:
+                    return result
+            raise DomainError("RESPONSE_LIMIT", "Review pagination exceeds the retrieval limit")
+
+        def normalize(row, kind, review_id=None):
+            if type(row.get("id")) is not int or not isinstance(row.get("body"), str):
+                raise DomainError("PROVIDER_UNAVAILABLE", "Invalid review comment", True)
+            author = row.get("user") or {}
+            resolver = row.get("resolver") or {}
+            if not isinstance(author, dict) or not isinstance(resolver, dict):
+                raise DomainError("PROVIDER_UNAVAILABLE", "Invalid review author", True)
+            for field in (
+                "created_at",
+                "submitted_at",
+                "updated_at",
+                "html_url",
+                "state",
+                "commit_id",
+                "original_commit_id",
+                "path",
+                "diff_hunk",
+            ):
+                if row.get(field) is not None and not isinstance(row[field], str):
+                    raise DomainError("PROVIDER_UNAVAILABLE", "Invalid review metadata", True)
+            for field in ("position", "original_position"):
+                if row.get(field) is not None and type(row[field]) is not int:
+                    raise DomainError("PROVIDER_UNAVAILABLE", "Invalid review position", True)
+            return {
+                "kind": kind,
+                "id": row["id"],
+                "review_id": review_id,
+                "body": row["body"],
+                "author": {"id": author.get("id"), "login": author.get("login")},
+                "created_at": row.get("created_at") or row.get("submitted_at"),
+                "updated_at": row.get("updated_at"),
+                "url": row.get("html_url"),
+                "state": row.get("state"),
+                "commit_sha": row.get("commit_id"),
+                "original_commit_sha": row.get("original_commit_id"),
+                "path": row.get("path"),
+                "line": row.get("position"),
+                "original_line": row.get("original_position"),
+                "diff_hunk": row.get("diff_hunk"),
+                "dismissed": row.get("dismissed"),
+                "stale": row.get("stale"),
+                "resolver": (
+                    {"id": resolver.get("id"), "login": resolver.get("login")} if resolver else None
+                ),
+            }
+
+        items = [
+            normalize(row, "discussion")
+            for row in await pages(self.path + f"/issues/{number}/comments")
+        ]
+        review_path = self.path + f"/pulls/{number}/reviews"
+        for review in await pages(review_path, paginated=True):
+            items.append(normalize(review, "review"))
+            for comment in await pages(review_path + f"/{review['id']}/comments"):
+                items.append(normalize(comment, "inline", review["id"]))
+        return sorted(items, key=lambda item: (item["created_at"] or "", item["kind"], item["id"]))

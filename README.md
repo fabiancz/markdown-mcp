@@ -5,6 +5,7 @@ Search, list, read, outline and backlinks use immutable commit snapshots and
 SQLite FTS5. No running Obsidian, embedding service or external AI API is needed.
 
 Version 0.2.0 adds durable writes through Forgejo pull requests for review.
+Version 0.2.2 adds PR discussion/review reads and approved updates to the same PR.
 Read works with GitHub, GitLab and Forgejo repositories. Write is opt-in;
 automatic merge is disabled. Obsidian does not need to run on the server.
 
@@ -60,7 +61,7 @@ the search index and persistent application state in `data/`.
 Edit these settings in `.env` for either variant:
 
 ```dotenv
-IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.1
+IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.2
 GIT_PROVIDER=forgejo
 GIT_REPO_URL=https://forge.example/owner/vault.git
 GIT_USERNAME=your-service-account
@@ -85,8 +86,8 @@ GIT_ALLOW_HTTP=true
 The host and port must be reachable from the container. HTTP sends credentials
 and note content unencrypted. SSH repository URLs are currently unsupported.
 
-Use the 0.2.1 image after its publishing workflow has completed successfully.
-It includes Forgejo review writes and HTTP transport support. Earlier read
+Use the 0.2.2 image after its publishing workflow has completed successfully.
+It includes Forgejo review writes, feedback reads, same-PR updates and HTTP transport support. Earlier read
 images do not include the write tools. For local testing, build this checkout.
 
 The examples use `:latest`, which is created by stable release publication; pushes to `main`
@@ -199,7 +200,7 @@ commands, URLs or punctuation, and `filename` for paths, titles and aliases.
 Stemming and semantic similarity are not included.
 
 For Forgejo review writes, use a service account with repository access and a
-PAT scoped to `write:repository`. Enable:
+PAT scoped to `write:repository` and `read:issue` for PR feedback reads. Enable:
 
 ```dotenv
 WRITE_ENABLED=true
@@ -216,6 +217,14 @@ In OAuth mode also set `GITHUB_WRITE_USER_IDS` to the permitted subset of
 3. Call `submit_change(change_id=..., expected_diff_hash=..., mode="review")`.
 4. Follow `cr_url` for review and manual merge; poll `get_change` for progress.
    Read sees the proposal only after merge into the configured target.
+
+To address feedback in that PR, call `get_change_review` with the original change
+ID, then `read_change_note` with its exact `head_sha`. Prepare operations using
+`prepare_change_update` with `expected_head_sha` and the returned note revisions.
+Inspect the new diff, then call `submit_change_update` with its `update_id` and
+exact `diff_hash`. Poll `get_change(update_id)` for `applied=true`. A changed head
+requires a fresh preview; manual reviewer commits are preserved. With write
+enabled, 0.2.2 advertises sixteen tools; fresh read-only installations keep seven.
 
 Accepted, PR-open, merged and visible-in-read are separate facts. Restart/retry
 reconciles existing effects; it does not create a second PR or overwrite foreign

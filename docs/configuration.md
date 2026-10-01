@@ -53,6 +53,11 @@ repository and review Swagger contract before publishing. Complex subpath instal
 IDs; automatic owner/repo recognition is tested for ordinary URLs. Git credentials
 are never inferred from the OAuth login.
 
+Forgejo review writes require repository write access and a `write:repository`
+PAT. Since 0.2.2, add `read:issue` to read PR discussion alongside reviews and
+inline comments. Repository-specific tokens are supported; no admin/user scope
+is needed. Use the same credential for Git and the API.
+
 To use `_FILE` secrets, override the sample MCP environment to remove its direct
 secret interpolation and add the `_FILE` path with a read-only secret mount. Do
 not set both forms. To use a private CA, mount it read-only and pass `GIT_CA_BUNDLE`

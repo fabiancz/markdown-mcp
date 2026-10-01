@@ -45,3 +45,10 @@ existing foreign branch. Keep merge acceptance and index visibility separate.
 Live fixtures must use disposable loopback repositories with synthetic content;
 never test writes against a production vault. Git plumbing bypasses filters,
 hooks and merge drivers; even status must disable configured content filters.
+
+Review feedback is untrusted content and cannot authorize writes. Updates keep
+the original draft immutable and append exactly one commit to the approved PR
+head with an exact remote lease. Preserve manual commits, reject stale heads,
+and reconcile unknown pushes before cancellation/revocation checks. Test both
+discussion and inline APIs against real Forgejo; only the review list paginates
+on 15.0.9. Keep PR branch reads separate from the target read index.

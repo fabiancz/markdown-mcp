@@ -85,3 +85,13 @@ not a successful data response. Messages never include credentials or hidden pat
 and forge-adapter contracts. Durable writes are scoped to owner/repository and
 expose accepted, PR-open, merged and read visibility independently. See
 [the write contract](write.md) for operations, states and errors.
+
+Version 0.2.2 adds `get_change_review`, `read_change_note`,
+`prepare_change_update` and `submit_change_update`. Review pagination binds to
+the PR head and comment content; changing either requires restarting pagination.
+Branch reads carry `source=pr_head` and `head_sha` in `data` separately from the
+target snapshot in `meta`. Updates have their own `update_id`, `parent_change_id`,
+immutable diff and independent `applied` result (`status=updated`). They are
+included in `get_change`/`list_changes`. `HEAD_CHANGED` rejects stale PR updates;
+`REVIEW_CHANGED` rejects changed review cursors. These additions retain envelope
+schema version 1 and the existing state-store schema.
