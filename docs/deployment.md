@@ -97,6 +97,30 @@ be backed up consistently; copying a live DB alone is insufficient. Protect back
 like the original private vault. For a released version: pull the chosen image,
 read migration notes, then recreate the service. Do not downgrade onto newer state.
 
+Set `IMAGE` in `.env` to the full released reference, then run:
+
+```sh
+docker compose pull mcp
+docker compose up -d mcp
+```
+
+Pulling an image alone does not recreate the running container. `.env` supplies
+Compose substitutions; settings reach MCP only when the service's `environment`
+section passes them through. Keep your Compose file in sync with the distributed
+example, particularly `WRITE_ENABLED` and the OAuth writer allowlist.
+
+After changing tools or configuration, refresh the connection in ChatGPT Plugins
+and start a new conversation, as described in
+[OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+A fresh read-only installation advertises seven tools; enabling Forgejo review
+writes adds five tools, for twelve total. Persisted write state also keeps those
+tools registered for observation after disabling writes; mutations still enforce
+the current policy. Use authenticated `ping` to check the running application's
+`version`, `write_enabled` and `write_default_mode` (available since 0.2.1).
+The MCP initialization `serverInfo.version` uses the installed package version,
+which matches the release tag. Plugin information displayed by ChatGPT may have
+separate metadata; use the MCP response to verify the running application.
+
 To rebuild only the derived index: stop MCP, move `data/index.sqlite` and any
 `index.sqlite-wal`/`index.sqlite-shm` aside, then start MCP. Keep `data/source.json`,
 `data/auth/`, `data/state.sqlite` and all repo

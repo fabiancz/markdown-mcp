@@ -25,7 +25,9 @@ Use Python 3.12 and uv with the committed lockfile. Run:
 
 GitHub Actions runs checks on hosted Ubuntu and publishes tested amd64/arm64
 images to GHCR. Pull requests must never publish or receive package write access.
-Stable image tags must match the package version and lockfile. Keep the product
+Stable image tags must match the package version and lockfile. Derive the MCP
+initialization version and authenticated ping version from installed package
+metadata; never maintain a separate hardcoded application version. Keep the product
 workflow independent of private operator tools outside this checkout.
 
 Keep MCP tools thin. Read immutable commit objects; never reset, commit or push

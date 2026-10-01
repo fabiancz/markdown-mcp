@@ -55,10 +55,17 @@ def restore_fixture_ownership(deployment: Path, image: str, platform: str):
 
 PROBE = """
 import asyncio, json, urllib.request
+from importlib.metadata import version
 from fastmcp import Client
 async def main():
     urllib.request.urlopen("http://127.0.0.1:8000/health/ready")
     async with Client("http://127.0.0.1:8000/mcp") as client:
+        release_version = version("obsidian-read-mcp")
+        assert client.initialize_result.serverInfo.version == release_version
+        ping = (await client.call_tool("ping", {})).data["data"]
+        assert ping["version"] == release_version
+        assert ping["write_enabled"] is False
+        assert ping["write_default_mode"] == "review"
         result = (await client.call_tool("search_notes", {"query":"zaloha"})).data
         hit = result["data"]["items"][0]
         note = (await client.call_tool("read_note", {

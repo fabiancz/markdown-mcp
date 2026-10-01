@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from . import __version__
 from .auth import AuthorizeRequests, make_auth, principal
 from .config import Settings
 from .models import DomainError
@@ -41,6 +42,7 @@ def create_server(settings: Settings, reader: Reader | None = None) -> FastMCP:
 
     mcp = FastMCP(
         "Markdown Vault MCP",
+        version=__version__,
         auth=make_auth(settings),
         lifespan=lifespan,
         instructions=(
@@ -211,7 +213,16 @@ def create_server(settings: Settings, reader: Reader | None = None) -> FastMCP:
     @mcp.tool(annotations={**annotations, "openWorldHint": False})
     async def ping() -> dict:
         """Check authenticated connectivity without reading notes or fetching Git."""
-        return {"schema_version": "1", "data": {"status": "ok", "mode": settings.deployment_mode}}
+        return {
+            "schema_version": "1",
+            "data": {
+                "status": "ok",
+                "mode": settings.deployment_mode,
+                "version": __version__,
+                "write_enabled": settings.write_enabled,
+                "write_default_mode": settings.write_default_mode,
+            },
+        }
 
     @mcp.custom_route("/health/live", methods=["GET"])
     async def live(request: Request):

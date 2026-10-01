@@ -27,6 +27,12 @@ not a probability. A truncated snippet may contain only part of a long line.
 Tools are `search_notes`, `list_notes`, `read_note`, `get_note_outline`,
 `get_backlinks`, `get_vault_status` and a harmless `ping` connectivity probe.
 All tools require the current allowed identity. `ping` has no note data.
+
+Since 0.2.1, `ping.data` includes `status`, deployment `mode`, application `version`,
+`write_enabled` and `write_default_mode`, without fetching Git. MCP initialization
+reports the same installed package version in `serverInfo.version`; it is separate
+from the response `schema_version` and MCP protocol version.
+
 Read tools are read-only/non-destructive; freshness can fetch the configured
 remote and update local cache. When write is enabled or a durable change journal
 exists, review tools are also registered; their contracts are in [write.md](write.md).

@@ -1,6 +1,9 @@
 import base64
 import hashlib
 import re
+import tomllib
+from importlib.metadata import version
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -26,6 +29,38 @@ def oauth_settings(settings):
             "github_oauth_client_secret": settings.git_pat,
         }
     )
+
+
+@pytest.mark.parametrize("write_enabled", [False, True])
+async def test_mcp_release_version_and_write_discovery(vault, write_enabled):
+    settings, source, _, _ = vault
+    settings = settings.model_copy(update={"write_enabled": write_enabled})
+    metadata = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    release_version = metadata["project"]["version"]
+    assert version("obsidian-read-mcp") == release_version
+    server = create_server(settings, Reader(settings, source))
+    async with Client(server) as client:
+        assert client.initialize_result.serverInfo.version == release_version
+        fetches = source.fetch_count
+        ping = (await client.call_tool("ping", {})).data["data"]
+        assert ping == {
+            "status": "ok",
+            "mode": "tunnel",
+            "version": release_version,
+            "write_enabled": write_enabled,
+            "write_default_mode": "review",
+        }
+        assert source.fetch_count == fetches
+        names = {tool.name for tool in await client.list_tools()}
+        write_tools = {
+            "prepare_change",
+            "submit_change",
+            "get_change",
+            "list_changes",
+            "cancel_change",
+        }
+        assert len(names) == (12 if write_enabled else 7)
+        assert names & write_tools == (write_tools if write_enabled else set())
 
 
 async def test_mcp_tools_annotations_and_error_signal(vault):

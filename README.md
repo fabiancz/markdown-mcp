@@ -60,7 +60,7 @@ the search index and persistent application state in `data/`.
 Edit these settings in `.env` for either variant:
 
 ```dotenv
-IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.0
+IMAGE=ghcr.io/fabiancz/markdown-mcp:0.2.1
 GIT_PROVIDER=forgejo
 GIT_REPO_URL=https://forge.example/owner/vault.git
 GIT_USERNAME=your-service-account
@@ -85,7 +85,7 @@ GIT_ALLOW_HTTP=true
 The host and port must be reachable from the container. HTTP sends credentials
 and note content unencrypted. SSH repository URLs are currently unsupported.
 
-Use the 0.2.0 image after its publishing workflow has completed successfully.
+Use the 0.2.1 image after its publishing workflow has completed successfully.
 It includes Forgejo review writes and HTTP transport support. Earlier read
 images do not include the write tools. For local testing, build this checkout.
 
