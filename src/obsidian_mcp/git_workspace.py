@@ -22,6 +22,7 @@ class Operation(BaseModel):
     content: str | None = None
     expected_revision: str | None = None
     destination: str | None = None
+    upload_id: str | None = None
 
 
 def canonical_operations(values: list[dict]) -> list[dict]:
@@ -38,9 +39,14 @@ def canonical_operations(values: list[dict]) -> list[dict]:
             fields.add("expected_revision")
         if kind == "rename":
             fields.add("destination")
-        if kind not in {"create", "replace", "delete", "rename"} or set(op) != fields:
+        if kind == "create_attachment":
+            fields.add("upload_id")
+        if (
+            kind not in {"create", "replace", "delete", "rename", "create_attachment"}
+            or set(op) != fields
+        ):
             raise DomainError(
-                "INVALID_OPERATION", "Use create, replace, delete or rename with required fields"
+                "INVALID_OPERATION", "Use a supported operation with its required fields"
             )
     # Non-overlapping operations commute; ordering does not change idempotency.
     return sorted(result, key=lambda op: (op["path"], op["op"]))
@@ -70,26 +76,43 @@ class DraftWorkspace:
                     ) from None
         return result
 
-    def path(self, path: str, tree: dict, *, existing: bool):
+    def path(self, path: str, tree: dict, *, existing: bool, attachment: bool = False):
         safe_path(path)
         if (
-            not path.lower().endswith(".md")
+            (not attachment and not path.lower().endswith(".md"))
             or not self.source.policy.permits(path)
             or any(path_key(part) in {".git", ".obsidian", ".trash"} for part in path.split("/"))
             or path.endswith("/")
             or any(ord(c) < 32 or ord(c) == 127 for c in path)
             or len(path.encode()) > 1024
         ):
+            raise DomainError("INVALID_PATH", "Only permitted regular vault paths can be changed")
+        if attachment and (
+            not path.startswith(self.settings.attachments_folder + "/")
+            or path.lower().endswith(".md")
+            or any(path_key(p).startswith(".git") for p in path.split("/"))
+        ):
             raise DomainError(
-                "INVALID_PATH", "Only permitted regular Markdown paths can be changed"
+                "INVALID_PATH",
+                "Attachments must use ATTACHMENTS_FOLDER; Markdown uses note operations",
             )
         for p in PurePosixPath(path).parents:
             if str(p) != "." and any(path_key(str(p)) == path_key(t) for t in tree):
                 raise DomainError("INVALID_PATH", "A destination ancestor is not a directory")
+            if str(p) != ".":
+                for other in tree:
+                    prefix = "/".join(other.split("/")[: len(p.parts)])
+                    if prefix != str(p) and path_key(prefix) == path_key(str(p)):
+                        raise DomainError(
+                            "PATH_COLLISION", "Directory names collide after normalization"
+                        )
         if existing:
             if path not in tree or tree[path][0] not in {"100644", "100755"}:
                 raise DomainError("NOTE_NOT_FOUND", "The source is not a regular Markdown note")
-        elif any(path_key(p) == path_key(path) or p.startswith(path + "/") for p in tree):
+        elif any(
+            path_key(p) == path_key(path) or path_key(p).startswith(path_key(path) + "/")
+            for p in tree
+        ):
             raise DomainError(
                 "PATH_COLLISION", "Destination already exists or collides with a vault path"
             )
@@ -112,7 +135,9 @@ class DraftWorkspace:
             for suffix in ("", ".lock"):
                 Path(index + suffix).unlink(missing_ok=True)
 
-    def diff(self, base: str, tree: str) -> bytes:
+    def diff(self, base: str, tree: str, paths: list[str] | None = None) -> bytes:
+        if paths == []:
+            return b""
         return self.run(
             [
                 "diff",
@@ -124,15 +149,38 @@ class DraftWorkspace:
                 base,
                 tree,
                 "--",
+                *(paths if paths is not None else []),
             ]
         )
 
-    def prepare(self, base: str, operations: list[dict]) -> dict:
+    def preview(self, base, tree, attachments, paths):
+        if not attachments:
+            return self.diff(base, tree)
+        attachment_paths = {a["path"] for a in attachments}
+        text = self.diff(base, tree, [p for p in paths if p not in attachment_paths])
+        manifest = json.dumps(attachments, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+        return (
+            text
+            + b"\nAttachments (new files; SHA-256 over original bytes):\n"
+            + manifest.encode()
+            + b"\n"
+        )
+
+    def validate_attachment_policy(self, change):
+        if (
+            change.get("attachments")
+            and change.get("upload_policy_hash") != self.settings.upload_policy_hash
+        ):
+            raise DomainError("POLICY_CHANGED", "Attachment policy changed; prepare a new draft")
+
+    def prepare(self, base: str, operations: list[dict], attachment_contents=None) -> dict:
         tree = self.tree(base)
         keys = [path_key(p) for p in tree]
         if len(keys) != len(set(keys)):
             raise DomainError("PATH_COLLISION", "Repository paths collide after normalization")
         paths, changes, originals, contents = set(), {}, {}, {}
+        attachments = []
+        total_bytes = 0
         for op in operations:
             path, kind = op["path"], op["op"]
             used = [path] + ([op["destination"]] if kind == "rename" else [])
@@ -140,7 +188,36 @@ class DraftWorkspace:
                 if any(path_key(p) == path_key(other) for other in paths):
                     raise DomainError("INVALID_OPERATION", "Operations must use distinct paths")
                 paths.add(p)
-            self.path(path, tree, existing=kind != "create")
+            is_attachment = kind == "create_attachment"
+            self.path(
+                path,
+                tree,
+                existing=kind not in {"create", "create_attachment"},
+                attachment=is_attachment,
+            )
+            if is_attachment:
+                raw = (attachment_contents or {}).get(op["upload_id"])
+                if raw is None:
+                    raise DomainError("UPLOAD_NOT_FOUND", "A staged upload is required")
+                total_bytes += len(raw)
+                if (
+                    len(raw) > self.settings.upload_max_file_bytes
+                    or total_bytes > self.settings.upload_max_change_bytes
+                ):
+                    raise DomainError(
+                        "UPLOAD_TOO_LARGE", "Attachment file or change byte limit exceeded"
+                    )
+                oid = self.run(["hash-object", "-w", "--stdin"], input=raw).decode().strip()
+                changes[path] = ("100644", oid)
+                originals[path] = None
+                attachments.append(
+                    {
+                        "path": path,
+                        "size_bytes": len(raw),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                    }
+                )
+                continue
             old = None
             if kind != "create":
                 old = self.run(["cat-file", "blob", tree[path][1]])
@@ -183,10 +260,23 @@ class DraftWorkspace:
                 originals[dest] = None
                 changes[dest] = tree[path]
                 contents[dest] = old.decode("utf-8")
-        if any(p.startswith(other + "/") for p in paths for other in paths if p != other):
+        if any(
+            path_key(p).startswith(path_key(other) + "/")
+            for p in paths
+            for other in paths
+            if p != other
+        ):
             raise DomainError("PATH_COLLISION", "Changed paths overlap as files and directories")
+        # Also reject differently spelled common directories within this transaction.
+        for p in paths:
+            self.path(
+                p,
+                {other: ("100644", "") for other in paths if other != p},
+                existing=False,
+                attachment=p in {a["path"] for a in attachments},
+            )
         desired = self.build_tree(base, changes)
-        raw_diff = self.diff(base, desired)
+        raw_diff = self.preview(base, desired, attachments, sorted(paths))
         if len(raw_diff) > self.settings.write_max_bytes:
             raise DomainError("RESPONSE_LIMIT", "Prepared diff exceeds the write limit")
         return {
@@ -194,6 +284,8 @@ class DraftWorkspace:
             "originals": originals,
             "result_blobs": changes,
             "contents": contents,
+            "attachments": attachments,
+            "upload_policy_hash": self.settings.upload_policy_hash if attachments else None,
             "tree": desired,
             "diff": raw_diff.decode("utf-8"),
             "diff_hash": hashlib.sha256(raw_diff).hexdigest(),
@@ -209,10 +301,21 @@ class DraftWorkspace:
         return result.decode().strip() or None
 
     def commit(self, change: dict) -> str:
+        self.validate_attachment_policy(change)
+        for item in change.get("attachments", []):
+            raw = self.run(["cat-file", "blob", change["result_blobs"][item["path"]][1]])
+            if len(raw) != item["size_bytes"] or hashlib.sha256(raw).hexdigest() != item["sha256"]:
+                raise DomainError(
+                    "DIFF_MISMATCH", "Attachment no longer matches the approved bytes"
+                )
         desired = self.build_tree(change["base_commit"], change["result_blobs"])
         if (
             desired != change["tree"]
-            or hashlib.sha256(self.diff(change["base_commit"], desired)).hexdigest()
+            or hashlib.sha256(
+                self.preview(
+                    change["base_commit"], desired, change.get("attachments", []), change["paths"]
+                )
+            ).hexdigest()
             != change["diff_hash"]
         ):
             raise DomainError("DIFF_MISMATCH", "Stored draft no longer matches the approved diff")
@@ -268,21 +371,26 @@ class DraftWorkspace:
             raise DomainError(
                 "BRANCH_CHANGED", "Draft worktree was changed; recovery will not reset it"
             )
+        contents = {p: text.encode() for p, text in change["contents"].items()}
+        for item in change.get("attachments", []):
+            contents[item["path"]] = self.run(
+                ["cat-file", "blob", change["result_blobs"][item["path"]][1]]
+            )
         for file in path.rglob("*"):
             if file.name == ".git" and file.parent == path:
                 continue
             relative = file.relative_to(path).as_posix()
-            if file.is_symlink() or (not file.is_dir() and relative not in change["contents"]):
+            if file.is_symlink() or (not file.is_dir() and relative not in contents):
                 raise DomainError(
                     "BRANCH_CHANGED", "Unexpected worktree content will not be overwritten"
                 )
-            if file.is_file() and file.read_bytes() != change["contents"][relative].encode():
+            if file.is_file() and file.read_bytes() != contents[relative]:
                 raise DomainError("BRANCH_CHANGED", "Worktree edits will not be overwritten")
         # Files are a raw view of affected results. Unaffected objects stay in Git's tree.
-        for relative, text in change["contents"].items():
+        for relative, raw in contents.items():
             file = path / relative
             file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_bytes(text.encode())
+            file.write_bytes(raw)
         marker = self.root / (change["change_id"] + ".json")
         marker.write_text(json.dumps({"change_id": change["change_id"], "head": head}))
 

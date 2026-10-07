@@ -22,13 +22,15 @@ secret is needed in the repository. Actions are pinned to commit hashes.
 | --- | --- |
 | Pull request | No publication |
 | Push to `main` | `sha-<first 12 commit characters>` and architecture suffixes |
+| Push `vX.Y.ZrcN` (e.g. `v0.3.0rc1`) | `X.Y.ZrcN`, architecture suffixes; never `latest` |
 | Push `vX.Y.Z` | `X.Y.Z`, `X.Y.Z-amd64`, `X.Y.Z-arm64`, `latest` |
 | Manual dispatch on `main` | Current package version (or matching input), architecture tags, `latest` |
 
 Manual dispatch on another branch verifies/builds but does not publish. Stable
-release versions must be `X.Y.Z`, without leading zeros, and match
+release versions must be `X.Y.Z`; test candidates use `X.Y.ZrcN` with a positive
+integer N. Both formats prohibit leading zeros and must match
 `[project].version` in `pyproject.toml`. A mismatched tag/input fails before
-publication. Main builds never move `latest`. Each stable release moves `latest`,
+publication. Main builds and release candidates never move `latest`. Each stable release moves `latest`,
 including a manually republished or older release. Examples use `latest`; choose an
 exact version when you want to pin a deployment.
 
@@ -95,3 +97,32 @@ configuration. Refresh the client connection after upgrading. Icon rendering
 depends on the client and has not been verified in ChatGPT. Existing mounts and
 state are reused without a migration. Pull 0.2.3 only after its publishing
 workflow succeeds.
+
+## 0.3.0rc1 — attachment upload preview
+
+Feature branch: `codex/attachments`. Git tag: `v0.3.0rc1`.
+After its publishing workflow succeeds, use:
+
+```dotenv
+IMAGE=ghcr.io/fabiancz/markdown-mcp:0.3.0rc1
+UPLOAD_MAX_FILE_BYTES=2000000
+```
+
+This candidate adds `upload_attachment` and `create_attachment` operations for
+an atomic attachment/note PR or an update of the same PR. It advertises seventeen
+tools with write enabled. Refresh client discovery after upgrade. File delivery
+from an actual attached/generated ChatGPT file still needs
+[operator acceptance](attachments.md#operator-acceptance-in-the-actual-ai-client).
+
+Update the deployment Compose file to forward the upload settings; changing
+`.env` alone does not add missing `environment` entries. Preserve both mounts and
+use a synthetic test repository for the first check. Existing published 0.2.3
+and `latest` are unaffected by a candidate tag. Every subsequent preview needs
+a new version, for example `0.3.0rc2`; do not overwrite an existing candidate.
+
+Publication runs in GitHub Actions using its scoped `GITHUB_TOKEN`. For a manual
+local GHCR push, `docker login` without a registry logs into Docker Hub. Use
+`docker login ghcr.io --username YOUR_GITHUB_USERNAME` and a GitHub classic PAT
+with `write:packages` as the password; never place the token in a source file or
+command argument. See [Docker login](https://docs.docker.com/reference/cli/docker/login/)
+and [GHCR authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry).

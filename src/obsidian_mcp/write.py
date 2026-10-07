@@ -19,6 +19,7 @@ from .models import ChangeStatus, DomainError, Principal
 from .read import Reader
 from .repo_lock import file_lock
 from .review import ReviewWorkflow
+from .uploads import ChatFile, UploadStore
 
 
 class Writer(ReviewWorkflow):
@@ -29,6 +30,7 @@ class Writer(ReviewWorkflow):
         self.source = reader.source
         self.workspace = DraftWorkspace(self.source)
         self.store = SQLiteChangeStore(settings)
+        self.uploads = UploadStore(settings, self.store)
         self.adapter = adapter or ForgejoAdapter(settings)
         self.wake = asyncio.Event()
         self.stopping = False
@@ -87,6 +89,8 @@ class Writer(ReviewWorkflow):
             "forge_evidence",
             "cancel_requested",
             "parent_change_id",
+            "attachments",
+            "attachments_verified",
         ]
         result = {k: change.get(k) for k in fields}
         result.update(
@@ -101,6 +105,21 @@ class Writer(ReviewWorkflow):
             result["update_id"] = change["change_id"]
             result["applied"] = change["status"] == "updated"
         return result
+
+    async def upload_attachment(self, file: ChatFile, idempotency_key: str, *, actor=None):
+        actor = self.actor(actor)
+        self.authorize(actor)
+        result = await asyncio.to_thread(
+            self.uploads.stage, file, idempotency_key, actor, self.authorize
+        )
+        return self.reader.envelope(result, self.reader.index.snapshot())
+
+    def attachment_contents(self, operations, owner):
+        return {
+            op["upload_id"]: self.uploads.read(op["upload_id"], owner)
+            for op in operations
+            if op["op"] == "create_attachment"
+        }
 
     async def prepare_change(
         self,
@@ -149,7 +168,10 @@ class Writer(ReviewWorkflow):
     def _prepare(self, actor, operations, summary, key, request_hash, base):
         with self.source.lock():
             self.source.initialize()
-            plan = self.workspace.prepare(base.source_commit, operations)
+            self.authorize(actor)
+            plan = self.workspace.prepare(
+                base.source_commit, operations, self.attachment_contents(operations, actor.subject)
+            )
             id = "chg_" + uuid.uuid4().hex
             backlinks = []
             with self.reader.index.connect() as db:
@@ -201,7 +223,11 @@ class Writer(ReviewWorkflow):
             )
             # Validate the entire preview budget before reserving an idempotency key.
             self.envelope(change, diff=True)
+            # Pin result blobs before journaling: upload expiry/GC must not break a draft.
+            self.workspace.run(["update-ref", "refs/mcp-draft-trees/" + id, plan["tree"]])
             result = self.store.reserve(change)
+            if result["change_id"] != id:
+                self.workspace.run(["update-ref", "-d", "refs/mcp-draft-trees/" + id])
             # Retain the base across target rewrites and Git garbage collection.
             self.workspace.run(
                 ["update-ref", "refs/mcp-drafts/" + result["change_id"], result["base_commit"]]
@@ -362,6 +388,7 @@ class Writer(ReviewWorkflow):
 
     def _run_once(self):
         with file_lock(self.settings.data_root / ".write-worker.lock"):
+            self.uploads.cleanup()
             for change in self.store.all():
                 if (
                     not change["submitted"]
@@ -476,6 +503,7 @@ class Writer(ReviewWorkflow):
             or change["target_branch"] != self.source.branch
         ):
             raise DomainError("POLICY_CHANGED", "Policy or target changed; prepare a new draft")
+        self.workspace.validate_attachment_policy(change)
         if not change["head_commit"]:
             change["status"] = "validating"
             self.store.save(change, "commit_intent")
@@ -484,6 +512,12 @@ class Writer(ReviewWorkflow):
                     self.source._sync()
                 )  # Fresh target; stale read fallback is not allowed.
                 change["target_commit"] = target
+                if change.get("attachments") and target != change["base_commit"]:
+                    target_tree = self.workspace.tree(target)
+                    for item in change["attachments"]:
+                        self.workspace.path(
+                            item["path"], target_tree, existing=False, attachment=True
+                        )
                 if target != change["base_commit"]:
                     change["warnings"] = [
                         "Target advanced; PR retains the exact approved base and intent. "
@@ -554,6 +588,31 @@ class Writer(ReviewWorkflow):
                 raise DomainError(
                     "SYNC_UNAVAILABLE", "Merge commit is not yet visible in target history", True
                 )
+            attachments = list(change.get("attachments") or [])
+            for update in self.store.all(change["owner"]):
+                if (
+                    update.get("parent_change_id") == change["change_id"]
+                    and update["status"] == "updated"
+                ):
+                    attachments.extend(update.get("attachments") or [])
+            if attachments:
+                target_tree = self.workspace.tree(snapshot.source_commit)
+                verified = True
+                for item in attachments:
+                    entry = target_tree.get(item["path"])
+                    if not entry or entry[0] not in {"100644", "100755"}:
+                        verified = False
+                        break
+                    raw = self.workspace.run(["cat-file", "blob", entry[1]])
+                    if hashlib.sha256(raw).hexdigest() != item["sha256"]:
+                        verified = False
+                        break
+                change["attachments_verified"] = verified
+                if not verified:
+                    change["warnings"] = [
+                        *change.get("warnings", []),
+                        "PR merged, but current target attachments differ from the original draft.",
+                    ]
         change.update(
             status="indexed",
             visible_in_read=True,

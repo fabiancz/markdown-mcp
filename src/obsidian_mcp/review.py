@@ -187,7 +187,12 @@ class ReviewWorkflow:
 
         def prepare():
             with self.source.lock():
-                plan = self.workspace.prepare(expected_head_sha, normalized)
+                self.authorize(actor)
+                plan = self.workspace.prepare(
+                    expected_head_sha,
+                    normalized,
+                    self.attachment_contents(normalized, actor.subject),
+                )
                 id = "upd_" + uuid.uuid4().hex
                 update = dict(parent, **plan)
                 update.update(
@@ -226,7 +231,10 @@ class ReviewWorkflow:
                     backlinks=[],
                 )
                 self.envelope(update, diff=True)
+                self.workspace.run(["update-ref", "refs/mcp-draft-trees/" + id, plan["tree"]])
                 result = self.store.reserve(update)
+                if result["change_id"] != id:
+                    self.workspace.run(["update-ref", "-d", "refs/mcp-draft-trees/" + id])
                 self.workspace.run(
                     ["update-ref", "refs/mcp-drafts/" + result["change_id"], expected_head_sha]
                 )
@@ -289,6 +297,7 @@ class ReviewWorkflow:
             or update["target_branch"] != self.source.branch
         ):
             raise DomainError("POLICY_CHANGED", "Policy or target changed; prepare a new update")
+        self.workspace.validate_attachment_policy(update)
         pr = asyncio.run(self.review_pr(parent))
         self.open_pr(pr)
         if pr["head"]["sha"] != update["base_commit"]:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import unquote, urlsplit
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     github_write_user_ids: str = ""
     write_max_operations: int = 50
     write_max_bytes: int = 1048576
+    upload_max_file_bytes: int = 2000000
+    upload_max_change_bytes: int = 10000000
+    upload_staging_max_bytes: int = 100000000
+    upload_retention_seconds: int = 86400
+    upload_allowed_hosts: str = "files.oaiusercontent.com"
+    attachments_folder: str = "attachments"
     write_poll_seconds: float = 10
     forge_timeout_seconds: float = 15
     allowed_folders: str = ""
@@ -55,6 +61,21 @@ class Settings(BaseSettings):
     max_index_bytes: int = 268435456
     snapshot_retention_seconds: int = 900
     snapshot_max_bytes: int = 1073741824
+
+    @field_validator(
+        "upload_max_file_bytes",
+        "upload_max_change_bytes",
+        "upload_staging_max_bytes",
+        "upload_retention_seconds",
+        mode="before",
+    )
+    @classmethod
+    def upload_integer(cls, value):
+        if type(value) is not int and not (
+            isinstance(value, str) and re.fullmatch(r"[0-9]+", value)
+        ):
+            raise ValueError("Upload limits must be positive integers")
+        return value
 
     @model_validator(mode="after")
     def validate_configuration(self):
@@ -134,6 +155,10 @@ class Settings(BaseSettings):
             "forge_timeout_seconds",
             "write_max_operations",
             "write_max_bytes",
+            "upload_max_file_bytes",
+            "upload_max_change_bytes",
+            "upload_staging_max_bytes",
+            "upload_retention_seconds",
             "write_poll_seconds",
             "max_file_bytes",
             "max_response_bytes",
@@ -145,6 +170,27 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} must be positive")
         if self.sync_min_interval_seconds < 0 or not 1 <= self.port <= 65535:
             raise ValueError("Invalid interval or port")
+        if self.upload_max_file_bytes > min(
+            self.upload_max_change_bytes, self.upload_staging_max_bytes
+        ):
+            raise ValueError("Upload change and staging budgets must fit one maximum-size file")
+        if not self.upload_hosts or any(
+            not re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+", h
+            )
+            for h in self.upload_hosts
+        ):
+            raise ValueError("UPLOAD_ALLOWED_HOSTS requires exact DNS names without wildcards")
+        from .policy import Policy, safe_path
+
+        safe_path(self.attachments_folder)
+        if (
+            self.attachments_folder.endswith("/")
+            or any(ord(c) < 32 or ord(c) == 127 for c in self.attachments_folder)
+            or any(p.casefold().startswith(".git") for p in self.attachments_folder.split("/"))
+            or not Policy(excluded=self.excluded_folders).permits(self.attachments_folder + "/x")
+        ):
+            raise ValueError("ATTACHMENTS_FOLDER must be a safe relative vault directory")
         if self.forge_api_url:
             api = urlsplit(self.forge_api_url)
             if (
@@ -164,6 +210,25 @@ class Settings(BaseSettings):
     @property
     def allowed_user_ids(self) -> frozenset[str]:
         return frozenset(x.strip() for x in self.github_allowed_user_ids.split(",") if x.strip())
+
+    @property
+    def upload_hosts(self) -> frozenset[str]:
+        return frozenset(
+            x.strip().lower() for x in self.upload_allowed_hosts.split(",") if x.strip()
+        )
+
+    @property
+    def upload_policy_hash(self) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                [
+                    self.policy_hash,
+                    self.attachments_folder,
+                    self.upload_max_file_bytes,
+                    self.upload_max_change_bytes,
+                ]
+            ).encode()
+        ).hexdigest()
 
     @property
     def write_user_ids(self) -> frozenset[str]:

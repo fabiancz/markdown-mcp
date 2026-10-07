@@ -42,6 +42,11 @@ ChatGPT has not been verified.
 Read tools are read-only/non-destructive; freshness can fetch the configured
 remote and update local cache. When write is enabled or a durable change journal
 exists, review tools are also registered; their contracts are in [write.md](write.md).
+This checkout additionally registers `upload_attachment` with
+`openai/fileParams` metadata; see [attachments](attachments.md). The tool is a
+non-destructive local staging mutation with an outbound file download.
+`get_vault_status` reports the configured write flag, attachment folder and
+per-file/per-change upload limits. Attachment bytes are not part of the read index.
 
 `search_notes` defaults to fulltext ALL terms; words and balanced quoted phrases
 are the entire query language. Raw FTS operators, unquoted punctuation, prefix

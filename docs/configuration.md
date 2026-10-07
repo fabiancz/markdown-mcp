@@ -42,10 +42,21 @@ Application configuration reads the process environment, not an automatic local
 | `WRITE_DEFAULT_MODE`, `YOLO_ENABLED` | Must remain review/false; automatic merge is unavailable |
 | `GITHUB_WRITE_USER_IDS` | Empty by default; OAuth writer IDs must be a subset of the read allowlist |
 | `WRITE_MAX_OPERATIONS`, `WRITE_MAX_BYTES` | 50 operations and 1 MiB normalized request/diff; preview must also fit `MAX_RESPONSE_BYTES` |
+| `UPLOAD_MAX_FILE_BYTES` | 2,000,000 original bytes per attachment, inclusive (2 MB); independent of Markdown limits |
+| `UPLOAD_MAX_CHANGE_BYTES` | 10,000,000 total attachment bytes per proposal |
+| `UPLOAD_STAGING_MAX_BYTES` | 100,000,000 transient upload bytes; also capped at 1,000 handles |
+| `UPLOAD_RETENTION_SECONDS` | 86,400 seconds for staged handles; prepared Git trees survive expiry |
+| `UPLOAD_ALLOWED_HOSTS` | `files.oaiusercontent.com`; comma-separated exact HTTPS download hosts; no wildcards/redirects/private IPs |
+| `ATTACHMENTS_FOLDER` | `attachments`; relative vault directory, also subject to folder policy |
 | `WRITE_POLL_SECONDS` | 10 seconds between background status checks; retries back off to 300 seconds |
 | `FORGE_TIMEOUT_SECONDS` | 15 seconds per HTTP operation |
 | `TUNNEL_IMAGE` | Compose-only official image pinned by digest in the example |
 | `OPENAI_TUNNEL_ID`, `OPENAI_TUNNEL_API_KEY` | Compose-only tunnel credentials, passed only to the tunnel service |
+
+Upload settings are new in 0.3.0rc1 and are not supported by published
+0.2.3 images. Limits must be positive integers, and change/staging budgets must
+each fit one maximum-size file. Read [attachments](attachments.md) for the
+transport, hostname configuration and pending client acceptance.
 
 For GitHub, the default API root is api.github.com or enterprise `/api/v3`; for
 GitLab `/api/v4`; for Forgejo `/api/v1`. Read-only installations do not call forge APIs. Forgejo write verifies the

@@ -25,7 +25,9 @@ Use Python 3.12 and uv with the committed lockfile. Run:
 
 GitHub Actions runs checks on hosted Ubuntu and publishes tested amd64/arm64
 images to GHCR. Pull requests must never publish or receive package write access.
-Stable image tags must match the package version and lockfile. Derive the MCP
+Stable and release-candidate image tags must match the package version and lockfile.
+Candidates use X.Y.ZrcN and must never move latest; verify this with
+`uv run pytest tests/test_release_metadata.py` when changing release metadata. Derive the MCP
 initialization version and authenticated ping version from installed package
 metadata; never maintain a separate hardcoded application version. Keep the product
 workflow independent of private operator tools outside this checkout.
@@ -52,3 +54,12 @@ head with an exact remote lease. Preserve manual commits, reject stale heads,
 and reconcile unknown pushes before cancellation/revocation checks. Test both
 discussion and inline APIs against real Forgejo; only the review list paginates
 on 15.0.9. Keep PR branch reads separate from the target read index.
+
+Attachment uploads use the documented fileParams input and bounded HTTPS
+downloads from exact configured hosts. Preserve public-IP pinning, TLS hostname
+verification, deadlines and URL redaction. Staging is identity/repository-scoped
+and expires; pin prepared result trees before journaling so upload cleanup and
+Git GC cannot invalidate a proposal. Attachment manifests bind exact byte hashes
+without returning binary patches. Cover upload limits, real local TLS, restart,
+atomic note/attachment changes and live Forgejo merge integrity. Actual AI-client
+file delivery requires separate acceptance; never infer it from synthetic tests.

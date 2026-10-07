@@ -459,6 +459,11 @@ async def test_live_container_http_worker_recreate_and_review(live_settings, tmp
     try:
         subprocess.run(command, capture_output=True, check=True)
         async with Client(await ready_url()) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            assert len(tools) == 17
+            assert tools["upload_attachment"].meta["openai/fileParams"] == ["file"]
+            status = (await client.call_tool("get_vault_status")).data["data"]
+            assert status["limits"]["upload_file_bytes"] == 2000000
             base = (await client.call_tool("list_notes")).data["meta"]["snapshot_id"]
             prepared = (
                 await client.call_tool(
@@ -589,3 +594,103 @@ async def test_live_container_http_worker_recreate_and_review(live_settings, tmp
                 check=True,
                 capture_output=True,
             )
+
+
+async def test_live_attachment_review_restart_merge_and_exact_bytes(live_settings, monkeypatch):
+    import hashlib
+
+    from obsidian_mcp.uploads import ChatFile
+
+    settings = live_settings
+    reader = Reader(settings)
+    base = await reader.snapshot()
+    writer = Writer(settings, reader)
+    raw = bytes(range(256)) * 7812 + bytes(range(128))
+    # Download/TLS is covered separately; this live test exercises actual Git/Forgejo effects.
+    monkeypatch.setattr("obsidian_mcp.uploads.download_file", lambda *args: raw)
+    upload = (
+        await writer.upload_attachment(
+            ChatFile(
+                download_url="https://files.oaiusercontent.com/fixture", file_id="fixture-file"
+            ),
+            "attachment",
+        )
+    )["data"]
+    prepared = (
+        await writer.prepare_change(
+            [
+                {
+                    "op": "create_attachment",
+                    "path": "attachments/data.bin",
+                    "upload_id": upload["upload_id"],
+                },
+                {
+                    "op": "create",
+                    "path": "Attachment.md",
+                    "content": "# Attachment\n[Download](attachments/data.bin)\n",
+                },
+            ],
+            "Add attachment and note",
+            "attachment-change",
+            base.snapshot_id,
+        )
+    )["data"]
+    assert len(prepared["diff"]) < 2000
+    await writer.submit_change(prepared["change_id"], prepared["diff_hash"], wait_seconds=0)
+    await writer.run_once()
+    current = writer.store.get(prepared["change_id"])
+    assert current["status"] == "awaiting_review", current
+    head = current["head_commit"]
+    with writer.source.lock():
+        assert writer.workspace.run(["show", head + ":attachments/data.bin"]) == raw
+    update = (
+        await writer.prepare_change_update(
+            prepared["change_id"],
+            [
+                {
+                    "op": "create_attachment",
+                    "path": "attachments/second.bin",
+                    "upload_id": upload["upload_id"],
+                }
+            ],
+            "Add second attachment to the same PR",
+            head,
+            "attachment-update",
+        )
+    )["data"]
+    await writer.submit_change_update(update["update_id"], update["diff_hash"], wait_seconds=0)
+    await writer.run_once()
+    applied = writer.store.get(update["update_id"])
+    assert applied["status"] == "updated", applied
+    assert applied["cr_number"] == current["cr_number"]
+    head = applied["head_commit"]
+    current = writer.store.get(prepared["change_id"])
+    # Expire transient staging before recreating the worker and observing a real squash merge.
+    with writer.store.connect() as db:
+        db.execute("UPDATE uploads SET expires=0")
+    writer.uploads.cleanup()
+    restarted = Writer(settings, Reader(settings))
+    async with httpx.AsyncClient(trust_env=False, timeout=20) as client:
+        await reviewer_merge(
+            client,
+            settings.api_url + writer.adapter.path + f"/pulls/{current['cr_number']}",
+            head,
+            auth=("reviewer", "synthetic-reviewer-password-29"),
+        )
+    current["next_attempt"] = 0
+    writer.store.save(current, "test_poll")
+    await restarted.run_once()
+    result = restarted.store.get(prepared["change_id"])
+    assert result["status"] == "indexed" and result["attachments_verified"] is True, result
+    snapshot = await restarted.reader.snapshot()
+    with restarted.source.lock():
+        actual = restarted.workspace.run(["show", snapshot.source_commit + ":attachments/data.bin"])
+        assert (
+            restarted.workspace.run(["show", snapshot.source_commit + ":attachments/second.bin"])
+            == raw
+        )
+    assert hashlib.sha256(actual).hexdigest() == upload["sha256"]
+    assert (
+        "[Download](attachments/data.bin)"
+        in (await restarted.reader.read_note("Attachment.md"))["data"]["text"]
+    )

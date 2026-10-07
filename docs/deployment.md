@@ -122,6 +122,14 @@ The MCP initialization `serverInfo.version` uses the installed package version,
 which matches the release tag. Plugin information displayed by ChatGPT may have
 separate metadata; use the MCP response to verify the running application.
 
+The 0.3.0rc1 attachment candidate adds one more tool
+(seventeen total with write enabled). Update both Compose and `.env` to forward
+the upload limits, permitted download hosts and attachment directory. The MCP
+container needs outbound HTTPS to those hosts, including with the tunnel profile.
+There is no additional inbound endpoint. Follow the
+[actual-client acceptance steps](attachments.md#operator-acceptance-in-the-actual-ai-client)
+for attached and generated files separately.
+
 The server advertises its bundled blue crystal icon in `serverInfo.icons` as an
 embedded PNG, with no additional configuration or public asset hosting. After
 upgrading, refresh the client connection to retrieve the metadata. Whether

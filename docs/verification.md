@@ -189,3 +189,56 @@ limits. These are local synthetic tests, not acceptance of an operator's actual
 Forgejo/ChatGPT/tunnel installation. The checks above were completed before the
 release commit/tag and registry publication. Pull the versioned image only after
 its publishing workflow succeeds. No production deployment was performed.
+
+## Attachment uploads — October 7, 2026 (unreleased checkout)
+
+Implemented with FastMCP 3.4.7 and the documented OpenAI fileParams descriptor.
+The package remains 0.2.3 locally; these changes have not been published as a
+release. Existing published 0.2.3 images do not contain this implementation.
+
+- Locked dependency sync, Ruff lint/format and wheel/sdist build passed.
+- Full pytest: **123 passed, 5 skipped**. The skipped disposable Forgejo tests
+  were then executed separately. Two upstream deprecation warnings remain.
+- Real loopback HTTPS fixture transferred exactly 2,000,000 bytes with hostname
+  verification, rejected an untrusted certificate and did not follow redirects.
+  Boundary tests also covered chunked/unknown-length bodies, incomplete streams,
+  DNS/private-address rejection, ownership, quotas, revocation and idempotency.
+- Real Git tests retained an atomic note/2 MB attachment draft through upload
+  expiry, restart, `git gc --prune=now` and an unknown PR-creation response.
+- Forgejo **15.0.9+gitea-1.22.0**: **5 passed** with the arm64 application image;
+  **5 passed** with amd64 after extending the attachment test to add a second
+  file in the same PR. Both runs included HTTP tool calls and container recreation.
+  The attachment test checked exact target bytes after real squash merge,
+  `attachments_verified=true`, and the linked Markdown note. File download in
+  this Forgejo test was injected; actual HTTPS transfer is tested separately.
+- Local Docker builds passed for linux/arm64 and linux/amd64. Compose smoke
+  checks passed for both architectures: synthetic HTTPS Git clone/read/recreation
+  in the tunnel-shaped profile, plus OAuth discovery and unauthenticated rejection.
+  These are local container tests, not an actual OpenAI tunnel session.
+- MCP schema tests confirm required file ID/download URL, optional filename/MIME,
+  `openai/fileParams` metadata, staging and preparation. The amd64 HTTP container
+  test also verified seventeen tools and the default upload limit.
+
+Still required: actual delivery of a user-attached file and a chat-generated file
+from the intended AI client, its real download hostname, OAuth/tunnel acceptance,
+production networking and file/link rendering in Obsidian. Follow
+[operator acceptance](attachments.md#operator-acceptance-in-the-actual-ai-client).
+No production vault was used for tests. No commit, push, publication or deployment
+was performed for this change.
+
+## 0.3.0rc1 candidate preparation — October 7, 2026
+
+Package metadata and lockfile now use 0.3.0rc1 on `codex/attachments`.
+The release workflow accepts matching `vX.Y.ZrcN` tags and publishes only their
+versioned/architecture tags. Stable `latest` promotion is separately controlled
+and disabled for candidates. Nine release-metadata tests cover this distinction,
+invalid versions, mismatched tags, commit builds and manual dispatch.
+
+Locked sync, Ruff lint/format, Python build and the full suite passed:
+**132 passed, 5 skipped**, with the same two upstream warnings. The five skipped
+live tests retain the separate real Forgejo evidence above; runtime code has not
+changed since those container/live checks. Actionlint passed in the official
+`rhysd/actionlint` image at digest
+`sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`.
+Publishing the candidate must still complete both architecture checks in CI;
+a local tag or source push alone does not establish registry availability.

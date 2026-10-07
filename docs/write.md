@@ -51,6 +51,7 @@ read. `meta` describes the current read snapshot, while the change's base snapsh
 and Git SHA are separate fields in `data`.
 
 ```text
+upload_attachment(file, idempotency_key)
 prepare_change(operations, summary, idempotency_key, base_snapshot_id)
 submit_change(change_id, expected_diff_hash, mode="review", wait_seconds=15)
 get_change(change_id, include_diff=false)
@@ -70,7 +71,9 @@ original note bytes. Operation examples:
 ]
 ```
 
-A transaction accepts distinct, non-overlapping regular Markdown paths. It
+A transaction accepts distinct, non-overlapping regular Markdown paths and,
+in this checkout, staged `create_attachment` operations. See
+[attachment contracts](attachments.md) for file inputs and separate byte limits. It
 rejects symlinks/submodules, symlink/file ancestors, traversal, excluded folders,
 case/Unicode collisions, occupied destinations and incorrect revisions. New text
 must be bounded UTF-8 without NUL, conflict markers or invalid frontmatter.
@@ -82,6 +85,9 @@ and backlink references. Default limits are 50 operations, 1 MiB normalized
 request/diff and 1 MiB per file. The full preview must also fit the response budget
 (default 32 KiB); otherwise preparation returns `RESPONSE_LIMIT` before reserving
 the key. Increase `MAX_RESPONSE_BYTES` deliberately for larger previews.
+Attachment bytes are excluded from the Markdown diff/request budgets; their
+compact path/size/SHA-256 manifest remains part of the exact approved preview
+and its hash. The same operation is available for approved same-PR updates.
 
 Idempotency binds owner/repository/key to the normalized operations, trimmed
 summary and base snapshot ID. Distinct operation ordering is normalized. Retry

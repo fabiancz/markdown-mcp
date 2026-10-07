@@ -62,6 +62,7 @@ async def test_mcp_release_version_and_write_discovery(vault, write_enabled):
         assert source.fetch_count == fetches
         names = {tool.name for tool in await client.list_tools()}
         write_tools = {
+            "upload_attachment",
             "prepare_change",
             "submit_change",
             "get_change",
@@ -72,7 +73,7 @@ async def test_mcp_release_version_and_write_discovery(vault, write_enabled):
             "prepare_change_update",
             "submit_change_update",
         }
-        assert len(names) == (16 if write_enabled else 7)
+        assert len(names) == (17 if write_enabled else 7)
         assert names & write_tools == (write_tools if write_enabled else set())
 
 
