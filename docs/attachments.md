@@ -1,9 +1,9 @@
 # Attachments from an AI chat
 
-Version 0.3.0rc1 adds `upload_attachment(file, idempotency_key)` and the
-`create_attachment` change operation. Published 0.2.3 images do not include it. After the candidate publishing workflow
-succeeds, use `ghcr.io/fabiancz/markdown-mcp:0.3.0rc2` for acceptance testing;
-otherwise build this checkout locally.
+Version 0.3.0 includes `upload_attachment(file, idempotency_key)` and the
+`create_attachment` change operation, introduced in the 0.3.0 release candidates.
+Published 0.2.3 images do not include these tools. After the stable publishing
+workflow succeeds, use `ghcr.io/fabiancz/markdown-mcp:0.3.0` or `:latest`.
 
 The tool declares `_meta["openai/fileParams"] = ["file"]`, following the
 [OpenAI file input contract](https://developers.openai.com/plugins/reference#file-apis)
@@ -13,9 +13,12 @@ the bytes from that temporary URL. No widget, new inbound upload route or OpenAI
 API key is needed by this implementation. The existing authenticated `/mcp`
 transport carries the file reference for both deployment profiles.
 
-Actual ChatGPT delivery of user-attached and generated files, including delivery
-over Secure MCP Tunnel, still needs operator acceptance. Documentation and local
-MCP tests alone do not certify those client capabilities. Other clients can use
+On October 7, 2026, an operator confirmed a real user-attached file from ChatGPT
+through Secure MCP Tunnel reached staging (81,808 bytes, 2,000,000-byte limit).
+The deployment needed the actual download hostname allowed and both upload
+settings forwarded through Compose. This confirms attached-file delivery to
+staging; generated-file delivery and the actual client workflow through PR,
+merge and Obsidian still need separate acceptance. Other clients can use
 the same descriptor if they can supply a file URL on an operator-approved host;
 there is no local-path, arbitrary URL import or Base64 fallback.
 
@@ -31,6 +34,31 @@ UPLOAD_STAGING_MAX_BYTES=100000000
 UPLOAD_RETENTION_SECONDS=86400
 UPLOAD_ALLOWED_HOSTS=files.oaiusercontent.com
 ATTACHMENTS_FOLDER=attachments
+```
+
+Upgrading only the image does not update an existing Compose file. Add these
+entries to the existing `services.mcp.environment` mapping if they are missing:
+
+```yaml
+UPLOAD_MAX_FILE_BYTES: ${UPLOAD_MAX_FILE_BYTES:-2000000}
+UPLOAD_ALLOWED_HOSTS: ${UPLOAD_ALLOWED_HOSTS:-files.oaiusercontent.com}
+```
+
+The confirmed ChatGPT upload used the exact additional host
+`oaisdmntprdenmarkeast.blob.core.windows.net`. For that source, the deployment used:
+
+```dotenv
+UPLOAD_ALLOWED_HOSTS=files.oaiusercontent.com,oaisdmntprdenmarkeast.blob.core.windows.net
+```
+
+This is observed delivery evidence, not a universal host list for every client
+or region. Preserve existing allowed hosts and verify any additional source.
+After editing `.env` and Compose, recreate the application and inspect only
+these non-secret environment values:
+
+```bash
+docker compose up -d --force-recreate mcp
+docker compose exec -T mcp printenv UPLOAD_MAX_FILE_BYTES UPLOAD_ALLOWED_HOSTS
 ```
 
 | Setting | Meaning |
@@ -146,7 +174,8 @@ Errors never echo file IDs, URL paths, query strings, userinfo or fragments.
 The error code and `retryable=false` remain unchanged. A schema/type validation
 error occurs before these diagnostics if `file` is not a valid file object.
 
-After upgrading, verify `ping` reports `0.3.0rc2`, refresh the client's tools,
+After upgrading, verify `ping` reports the deployed version (`0.3.0` for the stable
+release), refresh the client's tools,
 and attach a small unmodified test file in a new chat. Request only staging with
 `upload_attachment`, without creating a note or PR. Success returns `staged`,
 `upload_id`, size and SHA-256; on failure, collect `details.reason` and, if present,

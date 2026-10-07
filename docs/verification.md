@@ -190,8 +190,9 @@ Forgejo/ChatGPT/tunnel installation. The checks above were completed before the
 release commit/tag and registry publication. Pull the versioned image only after
 its publishing workflow succeeds. No production deployment was performed.
 
-## Attachment uploads — October 7, 2026 (unreleased checkout)
+## Attachment uploads — October 7, 2026 (initial prerelease checks)
 
+Historical evidence before the release candidates below.
 Implemented with FastMCP 3.4.7 and the documented OpenAI fileParams descriptor.
 The package remains 0.2.3 locally; these changes have not been published as a
 release. Existing published 0.2.3 images do not contain this implementation.
@@ -242,3 +243,29 @@ changed since those container/live checks. Actionlint passed in the official
 `sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`.
 Publishing the candidate must still complete both architecture checks in CI;
 a local tag or source push alone does not establish registry availability.
+
+## 0.3.0 release acceptance — October 7, 2026
+
+The 0.3.0rc2 diagnostics were verified with **151 passed, 5 skipped**, plus
+**5 passed** in the separate live Forgejo run with arm64 HTTP/recreation checks.
+[Candidate CI](https://github.com/fabiancz/markdown-mcp/actions/runs/37677747123)
+passed both container architectures and published the tested images.
+
+The operator subsequently reported successful staging of an unmodified attached
+file from ChatGPT over Secure MCP Tunnel: **81,808 bytes**, `status=staged`,
+an upload handle and SHA-256, with the default **2,000,000-byte** limit.
+Earlier source rejections were resolved by allowing the actual download host and
+forwarding `UPLOAD_ALLOWED_HOSTS` and `UPLOAD_MAX_FILE_BYTES` through Compose.
+The release notes document this configuration and the observed host.
+
+This is operator-reported real client evidence for attached-file staging, not
+evidence of generated-file delivery or a client-driven note/PR/merge workflow.
+Those acceptance steps remain distinct from the synthetic integration coverage.
+The operator also reported a pre-existing merged-PR reconciliation problem after
+source branch deletion; it remains a known limitation of 0.3.0.
+
+Stable 0.3.0 changes package metadata and documentation only; the runtime code is
+unchanged from 0.3.0rc2. Locked sync, Ruff lint/format, the full suite
+(**151 passed, 5 skipped**) and the 0.3.0 wheel/sdist build passed again before
+the stable release commit. Registry availability and `latest` promotion require the
+stable tag's publishing workflow to complete successfully.

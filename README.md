@@ -9,10 +9,11 @@ Version 0.2.2 adds PR discussion/review reads and approved updates to the same P
 Read works with GitHub, GitLab and Forgejo repositories. Write is opt-in;
 automatic merge is disabled. Obsidian does not need to run on the server.
 
-Version 0.3.0rc1 adds [chat file attachments](docs/attachments.md)
-with a configurable 2 MB per-file default. Use its image only after the candidate
-publishing workflow succeeds. Actual attached/generated file delivery in
-ChatGPT still needs client acceptance; 0.2.3 does not contain this feature.
+Version 0.3.0 adds [chat file attachments](docs/attachments.md)
+with a configurable 2 MB per-file default and redacted upload diagnostics.
+An operator confirmed user-attached file delivery from ChatGPT through the tunnel
+to staging. Forward the upload settings in Compose and allow the actual download
+hostname; see the documented verification scope and upgrade instructions.
 
 ## Installation
 
@@ -240,7 +241,7 @@ PR/branch on Forgejo. It does not close a PR or undo a merge. See the complete
 For attachments, call `upload_attachment` with the client's actual file reference,
 then include a `create_attachment` operation and any note/link operations in the
 same proposal. Configure `UPLOAD_MAX_FILE_BYTES=2000000` in `.env` using the
-updated Compose example. Version 0.3.0rc1 advertises seventeen tools when
+updated Compose example. Version 0.3.0 advertises seventeen tools when
 write is enabled. See [file transport, limits and client acceptance](docs/attachments.md).
 
 For updates, pull your chosen image and recreate the services with

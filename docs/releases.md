@@ -140,3 +140,28 @@ After its publishing workflow succeeds, deploy
 `ghcr.io/fabiancz/markdown-mcp:0.3.0rc2` and follow the
 [diagnostic test](attachments.md#diagnosing-source-rejection-030rc2).
 The earlier release candidate and `latest` are not overwritten.
+
+## 0.3.0 — chat file attachments
+
+Stable release of the attachment staging, atomic attachment/note proposals and
+redacted source diagnostics from the 0.3.0 candidates. The default file limit is
+2,000,000 bytes and is configurable with `UPLOAD_MAX_FILE_BYTES`.
+The `v0.3.0` workflow publishes `0.3.0`, `0.3.0-amd64`, `0.3.0-arm64` and `latest`.
+
+An operator confirmed an actual user-attached ChatGPT file reached staging over
+Secure MCP Tunnel after forwarding the upload settings through Compose and
+allowing the actual HTTPS download host. See the
+[upgrade instructions and acceptance scope](attachments.md). Generated-file
+delivery and the real client workflow through PR/merge/Obsidian remain separate
+acceptance steps; successful staging does not mean a vault write occurred.
+
+Existing installations must forward `UPLOAD_MAX_FILE_BYTES` and
+`UPLOAD_ALLOWED_HOSTS` in Compose; editing `.env` alone is insufficient. Preserve
+both mounts, the allowlist and other operator settings. Set
+`IMAGE=ghcr.io/fabiancz/markdown-mcp:latest`, then run `docker compose pull mcp`
+and `docker compose up -d mcp`.
+
+Known limitation retained from earlier versions: an operator observed an already
+merged Forgejo PR reported as `BRANCH_CHANGED` after its source branch was deleted.
+This release does not fix that status reconciliation issue. Verify the forge's
+actual state before interpreting that error or attempting a follow-up update.
