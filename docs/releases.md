@@ -165,3 +165,16 @@ Known limitation retained from earlier versions: an operator observed an already
 merged Forgejo PR reported as `BRANCH_CHANGED` after its source branch was deleted.
 This release does not fix that status reconciliation issue. Verify the forge's
 actual state before interpreting that error or attempting a follow-up update.
+
+## 0.3.1 — upload host patterns
+
+`UPLOAD_ALLOWED_HOSTS` now accepts a standalone `*` for any host, or DNS label
+patterns such as `oaisdmntpr*.blob.core.windows.net` for regional download hosts.
+Exact entries and the default `files.oaiusercontent.com` remain supported.
+Pattern stars cannot cross dots or match an appended foreign domain.
+
+The change affects hostname allowlisting only: HTTPS/443, TLS verification,
+public-IP checks, pinned connections, no redirects and upload limits remain in
+force. See [configuration examples and pattern semantics](attachments.md#host-patterns-031).
+Keep the existing Compose environment mapping, update `.env`, and recreate `mcp`.
+The `v0.3.1` workflow publishes both architectures and moves `latest` to 0.3.1.

@@ -46,7 +46,7 @@ Application configuration reads the process environment, not an automatic local
 | `UPLOAD_MAX_CHANGE_BYTES` | 10,000,000 total attachment bytes per proposal |
 | `UPLOAD_STAGING_MAX_BYTES` | 100,000,000 transient upload bytes; also capped at 1,000 handles |
 | `UPLOAD_RETENTION_SECONDS` | 86,400 seconds for staged handles; prepared Git trees survive expiry |
-| `UPLOAD_ALLOWED_HOSTS` | `files.oaiusercontent.com`; comma-separated exact HTTPS download hosts; no wildcards/redirects/private IPs |
+| `UPLOAD_ALLOWED_HOSTS` | `files.oaiusercontent.com`; comma-separated DNS names or `*` patterns; standalone `*` allows every host. HTTPS/public IP/TLS/no-redirect restrictions still apply. See [pattern semantics](attachments.md#host-patterns-031). |
 | `ATTACHMENTS_FOLDER` | `attachments`; relative vault directory, also subject to folder policy |
 | `WRITE_POLL_SECONDS` | 10 seconds between background status checks; retries back off to 300 seconds |
 | `FORGE_TIMEOUT_SECONDS` | 15 seconds per HTTP operation |

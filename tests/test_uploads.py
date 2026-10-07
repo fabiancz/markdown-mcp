@@ -14,7 +14,7 @@ from test_write import writes as writes
 from obsidian_mcp.config import Settings
 from obsidian_mcp.models import DomainError, Principal
 from obsidian_mcp.server import create_server
-from obsidian_mcp.uploads import ChatFile, download_file
+from obsidian_mcp.uploads import ChatFile, download_file, validate_download_url
 from obsidian_mcp.write import Writer
 
 FILE = ChatFile(
@@ -191,7 +191,11 @@ async def test_mcp_returns_source_diagnostics_without_staging(writes, monkeypatc
 @pytest.mark.parametrize(
     "address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "::ffff:127.0.0.1", "224.0.0.1"]
 )
-def test_download_denies_private_and_mixed_dns(vault, download, monkeypatch, address):
+@pytest.mark.parametrize("allowed_hosts", ["files.oaiusercontent.com", "*", "*.oaiusercontent.com"])
+def test_download_denies_private_and_mixed_dns(
+    vault, download, monkeypatch, address, allowed_hosts
+):
+    settings = Settings(**dict(vault[0].model_dump(), upload_allowed_hosts=allowed_hosts))
     monkeypatch.setattr(
         "obsidian_mcp.uploads.socket.getaddrinfo",
         lambda *a, **kw: [
@@ -200,7 +204,7 @@ def test_download_denies_private_and_mixed_dns(vault, download, monkeypatch, add
         ],
     )
     with rejects("UPLOAD_SOURCE_DENIED") as error:
-        download_file(FILE, vault[0])
+        download_file(FILE, settings)
     assert error.value.as_dict()["details"] == {"reason": "NON_PUBLIC_ADDRESS"}
     assert not download["connects"]
 
@@ -217,12 +221,99 @@ def test_download_denies_private_and_mixed_dns(vault, download, monkeypatch, add
         wire(b"abc", headers=b"Transfer-Encoding: chunked\r\n"),
     ],
 )
-def test_download_errors_never_expose_url(vault, download, response):
+@pytest.mark.parametrize("allowed_hosts", ["files.oaiusercontent.com", "*"])
+def test_download_errors_never_expose_url(vault, download, response, allowed_hosts):
     download["wire"] = response
+    settings = Settings(**dict(vault[0].model_dump(), upload_allowed_hosts=allowed_hosts))
     with rejects("UPLOAD_DOWNLOAD_FAILED") as error:
-        download_file(FILE, vault[0])
+        download_file(FILE, settings)
     assert "secret" not in str(error.value) and "signed" not in str(error.value)
     assert len(download["connects"]) == 1
+
+
+@pytest.mark.parametrize(
+    "pattern,host,allowed",
+    [
+        ("*", "any.example.net", True),
+        ("*", "127.0.0.1", True),  # DNS/IP validation still rejects this before connecting.
+        ("*.example.com", "cdn.example.com", True),
+        ("*.example.com", "example.com", False),
+        ("*.example.com", "a.cdn.example.com", False),
+        ("*.example.com", "cdn.example.com.evil.net", False),
+        ("*.example.com", "cdn.evil-example.com", False),
+        ("oaisdmntpr*.blob.core.windows.net", "oaisdmntprukwest.blob.core.windows.net", True),
+        ("oaisdmntpr*.blob.core.windows.net", "oaisdmntprdenmarkeast.blob.core.windows.net", True),
+        ("oaisdmntpr*.blob.core.windows.net", "other.blob.core.windows.net", False),
+        ("oaisdmntpr*.blob.core.windows.net", "oaisdmntpr.evil.blob.core.windows.net", False),
+        ("oaisdmntpr*.blob.core.windows.net", "oaisdmntprukwest.blob.core.windows.net.evil", False),
+        (
+            " FILES.OAIUSERCONTENT.COM , oaisdmntpr*.blob.core.windows.net ",
+            "files.oaiusercontent.com",
+            True,
+        ),
+        ("FILES.OAIUSERCONTENT.COM", "FILES.OAIUSERCONTENT.COM", True),
+        ("files.oaiusercontent.com", "other.oaiusercontent.com", False),
+    ],
+)
+def test_upload_host_patterns(vault, pattern, host, allowed):
+    settings = Settings(**dict(vault[0].model_dump(), upload_allowed_hosts=pattern))
+    assert settings.allows_upload_host(host) is allowed
+    if allowed:
+        assert validate_download_url("https://" + host + "/file", settings).hostname == host.lower()
+    else:
+        with rejects("UPLOAD_SOURCE_DENIED") as error:
+            validate_download_url("https://" + host + "/file", settings)
+        assert error.value.as_dict()["details"]["reason"] == "HOST_NOT_ALLOWED"
+
+
+@pytest.mark.parametrize("pattern", ["*", "*.oaiusercontent.com", "files*.oaiusercontent.com"])
+def test_download_through_wildcard_keeps_pinned_tls(vault, download, pattern):
+    settings = Settings(**dict(vault[0].model_dump(), upload_allowed_hosts=pattern))
+    assert download_file(FILE, settings) == b"abc"
+    assert download["connects"] == [("8.8.8.8", 443)]
+    assert b"Host: files.oaiusercontent.com" in download["request"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/f",
+        "sediment://file",
+        "sandbox:/mnt/data/f",
+        "file:///f",
+        "https://example.com:8443/f",
+        "https://user:secret@example.com/f",
+        "https://example.com/f#secret",
+        "https://example.com/secret\n",
+    ],
+)
+def test_global_wildcard_keeps_url_restrictions(vault, download, url):
+    settings = Settings(**dict(vault[0].model_dump(), upload_allowed_hosts="*"))
+    with rejects("UPLOAD_SOURCE_DENIED"):
+        download_file(ChatFile(download_url=url, file_id="f"), settings)
+    assert not download["connects"]
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "https://*.example.com",
+        "*.example.com:443",
+        "*.example.com/path",
+        "**.example.com",
+        "*.example..com",
+        "?.example.com",
+        "[a-z].example.com",
+        "*.example.com#fragment",
+        "user@*.example.com",
+        "-*.example.com",
+        "*.example.com.",
+        "a" * 64 + ".example.com",
+    ],
+)
+def test_upload_host_patterns_reject_invalid_configuration(vault, pattern):
+    with pytest.raises(ValidationError, match="UPLOAD_ALLOWED_HOSTS"):
+        Settings(**dict(vault[0].model_dump(), upload_allowed_hosts=pattern))
 
 
 def test_configuration_and_compose(vault):
@@ -236,7 +327,7 @@ def test_configuration_and_compose(vault):
         configured = Settings(**dict(settings.model_dump(), upload_max_file_bytes=size))
         assert configured.upload_max_file_bytes == size
     for update in [
-        {"upload_allowed_hosts": "*.example.com"},
+        {"upload_allowed_hosts": "https://*.example.com"},
         {"upload_allowed_hosts": ""},
         {"upload_max_change_bytes": 1999999},
         {"attachments_folder": "../secret"},

@@ -67,7 +67,7 @@ docker compose exec -T mcp printenv UPLOAD_MAX_FILE_BYTES UPLOAD_ALLOWED_HOSTS
 | `UPLOAD_MAX_CHANGE_BYTES` | Maximum total attachment bytes in one proposal, default 10 MB |
 | `UPLOAD_STAGING_MAX_BYTES` | Maximum bytes in transient staging, default 100 MB |
 | `UPLOAD_RETENTION_SECONDS` | Lifetime of an upload handle, default one day; retries do not extend it |
-| `UPLOAD_ALLOWED_HOSTS` | Comma-separated exact download hostnames, without schemes, ports or wildcards |
+| `UPLOAD_ALLOWED_HOSTS` | Comma-separated DNS names or `*` patterns, without schemes or ports; standalone `*` permits any host (since 0.3.1) |
 | `ATTACHMENTS_FOLDER` | Relative vault directory without a trailing slash; default `attachments` |
 
 Upload limits must be positive integers. The change and staging budgets must
@@ -89,10 +89,46 @@ through this first upload implementation.
 The default download hostname is an initial restrictive configuration, not a
 guarantee that every ChatGPT file uses that hostname. If a real file is rejected
 with `UPLOAD_SOURCE_DENIED`, inspect only its hostname, verify the file source,
-and add that exact host to the operator configuration if appropriate. Do not
+and configure an exact host or appropriate pattern as described below. Do not
 share signed URL query strings. Redirects are rejected even between allowed
 hosts. The MCP container needs outbound HTTPS access to the download host;
 `GIT_ALLOW_HTTP` does not weaken upload rules.
+
+### Host patterns (0.3.1)
+
+Different ChatGPT regions can use different download hosts. To cover the observed
+regional host family while retaining exact suffix matching, configure:
+
+```dotenv
+UPLOAD_ALLOWED_HOSTS=files.oaiusercontent.com,oaisdmntpr*.blob.core.windows.net
+```
+
+The pattern matches both `oaisdmntprdenmarkeast.blob.core.windows.net` and
+`oaisdmntprukwest.blob.core.windows.net`. This is a hostname rule, not independent
+proof of file ownership or a promise that every future client uses this family.
+
+To explicitly allow downloads from **any host**, use:
+
+```dotenv
+UPLOAD_ALLOWED_HOSTS=*
+```
+
+`*` removes the hostname allowlist only. HTTPS on port 443, TLS certificate and
+hostname verification, public-IP checks for every DNS answer, connection pinning,
+no redirects, timeouts and byte limits remain enforced. Local files and internal
+file/sandbox references remain unsupported. The default remains
+`files.oaiusercontent.com`; wildcard access is an operator choice.
+
+Matching is case-insensitive and covers the entire host. Except for standalone
+`*`, each star matches zero or more characters within **one DNS label**, never a
+dot. `*.example.com` matches `cdn.example.com`, but not `example.com`,
+`nested.cdn.example.com` or `cdn.example.com.evil.net`. Each label may contain at
+most one star; `?`, character classes, URL schemes, paths and ports are invalid
+configuration. Comma-separated exact names and patterns can be combined.
+
+Keep the Compose environment mapping shown above, then recreate the application
+after changing `.env`. If writing a literal wildcard directly in YAML, quote it
+as `UPLOAD_ALLOWED_HOSTS: "*"`.
 
 Download connections pin an already validated public IP while verifying TLS
 against the original hostname. Private/link-local/loopback/mixed DNS answers,
@@ -163,7 +199,7 @@ explanation. Do not keep retrying internal references as URLs.
 | Reason | Meaning / next step |
 | --- | --- |
 | `FILE_REFERENCE_NOT_RESOLVED` | `download_url` contains a file ID, `sediment:` or `sandbox:` reference. The client must supply the HTTPS URL through fileParams. The server cannot resolve these references; changing the host allowlist will not help. |
-| `HOST_NOT_ALLOWED` | The URL uses HTTPS, but its host is not allowed. `details.host` contains only a bounded hostname when safely representable. Verify the source before configuring that exact host. |
+| `HOST_NOT_ALLOWED` | The HTTPS host matches no configured name or pattern. `details.host` contains only a bounded hostname when safely representable. Verify the source before configuring a host or pattern. |
 | `LOCAL_PATH_OR_MISSING_SCHEME` | A local path or reference without a URL scheme was received. |
 | `HTTPS_REQUIRED` | The source uses a scheme other than HTTPS. |
 | `INVALID_URL`, `INVALID_URL_CHARACTERS`, `MISSING_HOST` | The supplied URL is malformed. |

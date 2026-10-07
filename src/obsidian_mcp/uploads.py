@@ -84,11 +84,11 @@ def validate_download_url(value: str, settings):
         )
     if port not in (None, 443):
         raise UploadSourceDenied("PORT_NOT_ALLOWED", "File download URL must use port 443.")
-    if host not in settings.upload_hosts:
+    if not settings.allows_upload_host(host):
         raise UploadSourceDenied(
             "HOST_NOT_ALLOWED",
-            "The HTTPS download host is not in UPLOAD_ALLOWED_HOSTS. The operator must verify "
-            "the source before allowing that exact hostname. Do not share the signed URL.",
+            "The HTTPS download host does not match UPLOAD_ALLOWED_HOSTS. The operator must "
+            "verify the source before allowing a hostname or pattern. Do not share the signed URL.",
             host=host,
         ) from None
     return url

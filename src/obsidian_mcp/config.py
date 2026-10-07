@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Literal
 from urllib.parse import unquote, urlsplit
@@ -175,12 +176,21 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Upload change and staging budgets must fit one maximum-size file")
         if not self.upload_hosts or any(
-            not re.fullmatch(
-                r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+", h
+            h != "*"
+            and (
+                len(h) > 253
+                or any(len(label) > 63 or label.count("*") > 1 for label in h.split("."))
+                or not re.fullmatch(
+                    r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+",
+                    h.replace("*", "a"),
+                )
             )
             for h in self.upload_hosts
         ):
-            raise ValueError("UPLOAD_ALLOWED_HOSTS requires exact DNS names without wildcards")
+            raise ValueError(
+                "UPLOAD_ALLOWED_HOSTS requires DNS names or patterns with at most one '*' "
+                "per DNS label, or '*' to allow all hosts; do not include schemes or ports"
+            )
         from .policy import Policy, safe_path
 
         safe_path(self.attachments_folder)
@@ -215,6 +225,18 @@ class Settings(BaseSettings):
     def upload_hosts(self) -> frozenset[str]:
         return frozenset(
             x.strip().lower() for x in self.upload_allowed_hosts.split(",") if x.strip()
+        )
+
+    def allows_upload_host(self, host: str) -> bool:
+        """Match whole hosts, with '*' confined to one DNS label unless used alone."""
+        patterns = self.upload_hosts
+        if "*" in patterns:
+            return True
+        labels = host.lower().split(".")
+        return any(
+            len(labels) == len(parts := pattern.split("."))
+            and all(fnmatchcase(label, part) for label, part in zip(labels, parts, strict=True))
+            for pattern in patterns
         )
 
     @property

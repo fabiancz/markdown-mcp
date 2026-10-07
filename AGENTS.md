@@ -56,7 +56,9 @@ discussion and inline APIs against real Forgejo; only the review list paginates
 on 15.0.9. Keep PR branch reads separate from the target read index.
 
 Attachment uploads use the documented fileParams input and bounded HTTPS
-downloads from exact configured hosts. Preserve public-IP pinning, TLS hostname
+downloads from configured host names or explicit wildcard patterns. A standalone
+`*` disables host allowlisting only; other wildcards cannot cross DNS label boundaries.
+Preserve public-IP pinning, TLS hostname
 verification, deadlines and URL redaction. Staging is identity/repository-scoped
 and expires; pin prepared result trees before journaling so upload cleanup and
 Git GC cannot invalidate a proposal. Attachment manifests bind exact byte hashes
