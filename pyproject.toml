@@ -1,6 +1,6 @@
 [project]
 name = "obsidian-read-mcp"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 description = "Self-hosted, snapshot-consistent Markdown vault MCP server"
 requires-python = ">=3.12,<3.14"
 dependencies = ["fastmcp==3.4.7", "httpx==0.28.1", "PyYAML==6.0.3", "pydantic-settings==2.13.1", "py-key-value-aio[disk]==0.4.4"]

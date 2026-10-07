@@ -177,6 +177,9 @@ def create_server(settings: Settings, reader: Reader | None = None) -> FastMCP:
             file reference, not a local/sandbox path or invented URL. Returns upload_id, SHA-256,
             size and expiry. Default file limit: 2 MB (2000000 bytes), set by the operator.
             Use create_attachment in prepare_change to include it with a note in one review PR.
+            The client must supply a resolved HTTPS download_url; never put a file ID,
+            sediment pointer or sandbox path in download_url. On UPLOAD_SOURCE_DENIED,
+            report details.reason (and details.host if present); do not invent another URL.
             Retry with the same key and a fresh reference to the same file; no vault write yet."""
             return await call(
                 writer.upload_attachment,

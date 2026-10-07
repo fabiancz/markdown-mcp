@@ -30,27 +30,73 @@ class ChatFile(BaseModel):
     file_name: str = Field(default="", max_length=1024)
 
 
+class UploadSourceDenied(DomainError):
+    """Expose bounded diagnostic facts, never the input URL or file identifiers."""
+
+    def __init__(self, reason: str, message: str, *, host: str | None = None):
+        super().__init__("UPLOAD_SOURCE_DENIED", message)
+        self.details = {"reason": reason}
+        if host and re.fullmatch(r"[a-z0-9.:-]{1,253}", host):
+            self.details["host"] = host
+
+    def as_dict(self) -> dict:
+        return {**super().as_dict(), "details": self.details}
+
+
+def validate_download_url(value: str, settings):
+    """Classify rejected sources before DNS without echoing paths or signed tokens."""
+    if any(ord(c) <= 32 or ord(c) == 127 for c in value) or "\\" in value:
+        raise UploadSourceDenied(
+            "INVALID_URL_CHARACTERS", "File URL contains forbidden characters."
+        )
+    if value.startswith(("file_", "file-", "sediment:", "sandbox:")):
+        raise UploadSourceDenied(
+            "FILE_REFERENCE_NOT_RESOLVED",
+            "download_url contains an internal file reference, not an HTTPS download URL. "
+            "The client must resolve the attachment through openai/fileParams before calling "
+            "this tool. The server cannot resolve file IDs, sediment or sandbox references. "
+            "Do not retry with another invented URL or add these references "
+            "to UPLOAD_ALLOWED_HOSTS.",
+        )
+    try:
+        url = urlsplit(value)
+        host, port = url.hostname, url.port
+    except ValueError:
+        raise UploadSourceDenied(
+            "INVALID_URL", "File URL could not be parsed as a valid URL."
+        ) from None
+    if not url.scheme or url.scheme == "file":
+        raise UploadSourceDenied(
+            "LOCAL_PATH_OR_MISSING_SCHEME",
+            "download_url must be an HTTPS URL supplied by the client, not a local path.",
+        )
+    if url.scheme != "https":
+        raise UploadSourceDenied("HTTPS_REQUIRED", "File download URL must use HTTPS.")
+    if not host:
+        raise UploadSourceDenied("MISSING_HOST", "File download URL must have a hostname.")
+    if url.username is not None or url.password is not None:
+        raise UploadSourceDenied(
+            "URL_CREDENTIALS_NOT_ALLOWED", "File download URL must not contain credentials."
+        )
+    if url.fragment:
+        raise UploadSourceDenied(
+            "URL_FRAGMENT_NOT_ALLOWED", "File download URL must not contain a fragment."
+        )
+    if port not in (None, 443):
+        raise UploadSourceDenied("PORT_NOT_ALLOWED", "File download URL must use port 443.")
+    if host not in settings.upload_hosts:
+        raise UploadSourceDenied(
+            "HOST_NOT_ALLOWED",
+            "The HTTPS download host is not in UPLOAD_ALLOWED_HOSTS. The operator must verify "
+            "the source before allowing that exact hostname. Do not share the signed URL.",
+            host=host,
+        ) from None
+    return url
+
+
 def download_file(file: ChatFile, settings) -> bytes:
     """Fetch only an allowed HTTPS host, with TLS verification and pinned public DNS."""
-    try:
-        url = urlsplit(file.download_url)
-        if (
-            url.scheme != "https"
-            or url.hostname not in settings.upload_hosts
-            or url.port not in (None, 443)
-            or url.username
-            or url.password
-            or url.fragment
-            or any(ord(c) <= 32 or ord(c) == 127 for c in file.download_url)
-            or "\\" in file.download_url
-        ):
-            raise ValueError
-    except ValueError:
-        raise DomainError(
-            "UPLOAD_SOURCE_DENIED",
-            "File URL must use HTTPS on an exact UPLOAD_ALLOWED_HOSTS name, port 443, "
-            "without credentials or a fragment. Local and sandbox paths cannot be uploaded.",
-        ) from None
+    url = validate_download_url(file.download_url, settings)
     conn = None
     raw_socket = None
     response = None
@@ -75,7 +121,9 @@ def download_file(file: ChatFile, settings) -> bytes:
             or getattr(ipaddress.ip_address(a[4][0]), "ipv4_mapped", None)
             for a in addresses
         ):
-            raise DomainError("UPLOAD_SOURCE_DENIED", "File host must resolve to public addresses")
+            raise UploadSourceDenied(
+                "NON_PUBLIC_ADDRESS", "File host must resolve only to public addresses."
+            )
         family, socktype, proto, _, address = addresses[0]
         raw_socket = socket.socket(family, socktype, proto)
         raw_socket.settimeout(remaining())

@@ -126,3 +126,17 @@ local GHCR push, `docker login` without a registry logs into Docker Hub. Use
 with `write:packages` as the password; never place the token in a source file or
 command argument. See [Docker login](https://docs.docker.com/reference/cli/docker/login/)
 and [GHCR authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry).
+
+## 0.3.0rc2 — upload source diagnostics
+
+This candidate adds redacted `details.reason` to `UPLOAD_SOURCE_DENIED`,
+distinguishing unresolved client file references from host-policy and malformed
+URL errors. A rejected HTTPS host is reported separately without its signed URL.
+The tool description tells clients to report these details instead of inventing
+download URLs. Download restrictions, the 2 MB default and fileParams schema stay
+in place. This candidate does not claim to fix actual ChatGPT file delivery.
+
+After its publishing workflow succeeds, deploy
+`ghcr.io/fabiancz/markdown-mcp:0.3.0rc2` and follow the
+[diagnostic test](attachments.md#diagnosing-source-rejection-030rc2).
+The earlier release candidate and `latest` are not overwritten.

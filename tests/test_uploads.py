@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import socket
 from contextlib import contextmanager
 
@@ -125,6 +126,69 @@ def test_download_denies_invalid_sources_before_network(vault, download, url):
 
 
 @pytest.mark.parametrize(
+    "url,reason,host",
+    [
+        ("file_secret", "FILE_REFERENCE_NOT_RESOLVED", None),
+        ("file-secret", "FILE_REFERENCE_NOT_RESOLVED", None),
+        ("sediment://secret/file", "FILE_REFERENCE_NOT_RESOLVED", None),
+        ("sandbox:/mnt/data/secret.png", "FILE_REFERENCE_NOT_RESOLVED", None),
+        ("/mnt/data/secret.png", "LOCAL_PATH_OR_MISSING_SCHEME", None),
+        ("file:///secret.png", "LOCAL_PATH_OR_MISSING_SCHEME", None),
+        ("http://files.oaiusercontent.com/secret", "HTTPS_REQUIRED", None),
+        ("https:///secret", "MISSING_HOST", None),
+        ("https://[secret", "INVALID_URL", None),
+        ("https://files.oaiusercontent.com:secret/file", "INVALID_URL", None),
+        ("https://files.oaiusercontent.com:8443/secret", "PORT_NOT_ALLOWED", None),
+        ("https://user:secret@files.oaiusercontent.com/f", "URL_CREDENTIALS_NOT_ALLOWED", None),
+        ("https://@files.oaiusercontent.com/secret", "URL_CREDENTIALS_NOT_ALLOWED", None),
+        ("https://files.oaiusercontent.com/f#secret", "URL_FRAGMENT_NOT_ALLOWED", None),
+        ("https://files.oaiusercontent.com/secret\n", "INVALID_URL_CHARACTERS", None),
+        ("https://files.oaiusercontent.com\\secret", "INVALID_URL_CHARACTERS", None),
+        ("https://cdn.example.com/secret?sig=secret", "HOST_NOT_ALLOWED", "cdn.example.com"),
+        ("https://%73ecret/file", "HOST_NOT_ALLOWED", None),
+    ],
+)
+def test_source_diagnostics_are_specific_redacted_and_offline(
+    vault, monkeypatch, url, reason, host
+):
+    def no_dns(*args, **kwargs):
+        pytest.fail("Rejected file references must not reach DNS")
+
+    monkeypatch.setattr("obsidian_mcp.uploads.socket.getaddrinfo", no_dns)
+    with rejects("UPLOAD_SOURCE_DENIED") as error:
+        download_file(ChatFile(download_url=url, file_id="secret-id"), vault[0])
+    result = error.value.as_dict()
+    assert result["details"] == {"reason": reason, **({"host": host} if host else {})}
+    assert not result["retryable"]
+    assert "secret" not in json.dumps(result)
+    assert "secret" not in str(error.value)
+
+
+async def test_mcp_returns_source_diagnostics_without_staging(writes, monkeypatch):
+    settings, reader, writer, *_ = writes
+
+    def no_dns(*args, **kwargs):
+        pytest.fail("Internal file references must not reach DNS")
+
+    monkeypatch.setattr("obsidian_mcp.uploads.socket.getaddrinfo", no_dns)
+    async with Client(create_server(settings, reader)) as client:
+        result = await client.call_tool(
+            "upload_attachment",
+            {
+                "file": {"download_url": "sediment://secret", "file_id": "secret-id"},
+                "idempotency_key": "diagnostic",
+            },
+            raise_on_error=False,
+        )
+    assert result.is_error
+    payload = json.loads(result.content[0].text)
+    assert payload["code"] == "UPLOAD_SOURCE_DENIED"
+    assert payload["details"] == {"reason": "FILE_REFERENCE_NOT_RESOLVED"}
+    assert "secret" not in result.content[0].text
+    assert not writer.store.all() and not writer.adapter.prs
+
+
+@pytest.mark.parametrize(
     "address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "::ffff:127.0.0.1", "224.0.0.1"]
 )
 def test_download_denies_private_and_mixed_dns(vault, download, monkeypatch, address):
@@ -135,8 +199,9 @@ def test_download_denies_private_and_mixed_dns(vault, download, monkeypatch, add
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)),
         ],
     )
-    with rejects("UPLOAD_SOURCE_DENIED"):
+    with rejects("UPLOAD_SOURCE_DENIED") as error:
         download_file(FILE, vault[0])
+    assert error.value.as_dict()["details"] == {"reason": "NON_PUBLIC_ADDRESS"}
     assert not download["connects"]
 
 

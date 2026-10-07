@@ -2,7 +2,7 @@
 
 Version 0.3.0rc1 adds `upload_attachment(file, idempotency_key)` and the
 `create_attachment` change operation. Published 0.2.3 images do not include it. After the candidate publishing workflow
-succeeds, use `ghcr.io/fabiancz/markdown-mcp:0.3.0rc1` for acceptance testing;
+succeeds, use `ghcr.io/fabiancz/markdown-mcp:0.3.0rc2` for acceptance testing;
 otherwise build this checkout locally.
 
 The tool declares `_meta["openai/fileParams"] = ["file"]`, following the
@@ -125,6 +125,33 @@ Errors include `UPLOAD_TOO_LARGE`, `UPLOAD_SOURCE_DENIED`,
 `UPLOAD_DOWNLOAD_FAILED`, `UPLOAD_QUOTA`, `UPLOAD_NOT_FOUND` and `UPLOAD_CORRUPT`,
 alongside existing authorization, path, policy and idempotency errors. Download
 errors do not publish a partial file or proposal.
+
+### Diagnosing source rejection (0.3.0rc2)
+
+`UPLOAD_SOURCE_DENIED` now includes `details.reason`. This is diagnostic support,
+not a fix for client file delivery. Report the exact tool error, not an inferred
+explanation. Do not keep retrying internal references as URLs.
+
+| Reason | Meaning / next step |
+| --- | --- |
+| `FILE_REFERENCE_NOT_RESOLVED` | `download_url` contains a file ID, `sediment:` or `sandbox:` reference. The client must supply the HTTPS URL through fileParams. The server cannot resolve these references; changing the host allowlist will not help. |
+| `HOST_NOT_ALLOWED` | The URL uses HTTPS, but its host is not allowed. `details.host` contains only a bounded hostname when safely representable. Verify the source before configuring that exact host. |
+| `LOCAL_PATH_OR_MISSING_SCHEME` | A local path or reference without a URL scheme was received. |
+| `HTTPS_REQUIRED` | The source uses a scheme other than HTTPS. |
+| `INVALID_URL`, `INVALID_URL_CHARACTERS`, `MISSING_HOST` | The supplied URL is malformed. |
+| `URL_CREDENTIALS_NOT_ALLOWED`, `URL_FRAGMENT_NOT_ALLOWED`, `PORT_NOT_ALLOWED` | The URL violates the download restrictions. |
+| `NON_PUBLIC_ADDRESS` | DNS returned an address that is not permitted for downloads. |
+
+Errors never echo file IDs, URL paths, query strings, userinfo or fragments.
+The error code and `retryable=false` remain unchanged. A schema/type validation
+error occurs before these diagnostics if `file` is not a valid file object.
+
+After upgrading, verify `ping` reports `0.3.0rc2`, refresh the client's tools,
+and attach a small unmodified test file in a new chat. Request only staging with
+`upload_attachment`, without creating a note or PR. Success returns `staged`,
+`upload_id`, size and SHA-256; on failure, collect `details.reason` and, if present,
+`details.host`. If the old generic message has no `details`, confirm the actual
+tool response and running version before repeating the test.
 
 ## Operator acceptance in the actual AI client
 
